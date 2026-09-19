@@ -17,5 +17,14 @@ export const experiments: Experiment[] = [
     path: "/experiments/calendar-stories",
     githubUrl: "https://github.com/yourusername/calendar-stories",
   },
+  {
+    id: "camera-portal",
+    title: "Camera Portal",
+    description:
+      "A motion-reactive projection-mapping sketch: a webcam detects movement in front of it and renders it live as glowing trails and particles inside a portal, ready to project onto a wall or floor.",
+    thumbnail: "/thumbnails/camera-portal.jpg",
+    path: "/experiments/camera-portal",
+    githubUrl: "https://github.com/yourusername/camera-portal",
+  },
   // Add more experiments here as you create them
 ];

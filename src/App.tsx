@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import ExperimentDetail from "./pages/ExperimentDetail";
 import CalendarStories from "./experiments/CalendarStories";
+import CameraPortal from "./experiments/CameraPortal";
 
 function App() {
   return (
@@ -14,6 +15,10 @@ function App() {
             <Route
               path="/experiments/calendar-stories"
               element={<CalendarStories />}
+            />
+            <Route
+              path="/experiments/camera-portal"
+              element={<CameraPortal />}
             />
           </Routes>
         </main>
