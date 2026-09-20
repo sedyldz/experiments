@@ -31,6 +31,71 @@ const PUSH_FORCE_SCALE = 26000;
 // so a noisy hand-tracking frame (a sudden jump) can't inject a burst of
 // energy into whatever it's dropped on top of.
 const MAX_DRAG_SPEED = 4000;
+// How fast a grabbed ball closes the gap to the pinch point, per second.
+// Chasing the target with a proportional gain (instead of teleporting
+// exactly onto it every frame) turns residual landmark noise into a small
+// smoothed wobble instead of a one-frame jolt.
+const DRAG_FOLLOW_GAIN = 22;
+
+// One Euro Filter (Casiez, Roussel & Vogel, 2012): the standard low-latency
+// adaptive smoothing filter for noisy tracking signals like hand landmarks.
+// It smooths hard when a value is nearly still (killing jitter) and backs
+// off automatically during fast motion (avoiding lag), which a fixed-alpha
+// exponential smoother can't do for both cases at once.
+class OneEuroFilter {
+  private minCutoff: number;
+  private beta: number;
+  private dCutoff: number;
+  private xPrev: number | null = null;
+  private dxPrev = 0;
+  private tPrev: number | null = null;
+
+  constructor(minCutoff = 1, beta = 0, dCutoff = 1) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.dCutoff = dCutoff;
+  }
+
+  private static alpha(cutoff: number, dt: number) {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / dt);
+  }
+
+  filter(x: number, t: number): number {
+    if (this.tPrev === null) {
+      this.tPrev = t;
+      this.xPrev = x;
+      return x;
+    }
+    const dt = Math.max(t - this.tPrev, 1e-6);
+    this.tPrev = t;
+
+    const dx = (x - (this.xPrev ?? x)) / dt;
+    const aD = OneEuroFilter.alpha(this.dCutoff, dt);
+    const dxHat = aD * dx + (1 - aD) * this.dxPrev;
+    this.dxPrev = dxHat;
+
+    const cutoff = this.minCutoff + this.beta * Math.abs(dxHat);
+    const a = OneEuroFilter.alpha(cutoff, dt);
+    const xHat = a * x + (1 - a) * (this.xPrev ?? x);
+    this.xPrev = xHat;
+    return xHat;
+  }
+}
+
+interface LandmarkFilter {
+  x: OneEuroFilter;
+  y: OneEuroFilter;
+  z: OneEuroFilter;
+}
+
+function createLandmarkFilters(count: number): LandmarkFilter[] {
+  return Array.from({ length: count }, () => ({
+    x: new OneEuroFilter(0.5, 1.2, 1),
+    y: new OneEuroFilter(0.5, 1.2, 1),
+    z: new OneEuroFilter(0.5, 1.2, 1),
+  }));
+}
 
 // A stable, low-jitter stand-in for "palm center": the wrist plus the four
 // finger MCP knuckles, averaged.
@@ -248,6 +313,9 @@ const HandPush = () => {
   });
   const pinchStateRef = useRef<PinchState[]>(
     Array.from({ length: MAX_HANDS }, () => ({ pinching: false, grabbedIndex: null }))
+  );
+  const landmarkFiltersRef = useRef<LandmarkFilter[][]>(
+    Array.from({ length: MAX_HANDS }, () => createLandmarkFilters(21))
   );
   const sizeRef = useRef({ width: 0, height: 0 });
   const handCountRef = useRef(0);
@@ -673,6 +741,7 @@ const HandPush = () => {
 
       const result: HandLandmarkerResult = landmarker.detectForVideo(video, time);
       const mirrorOn = mirrorRef.current;
+      const tSec = time / 1000;
 
       const points: Point[] = [];
       const landmarksOnScreen: Landmark3D[][] = [];
@@ -680,16 +749,23 @@ const HandPush = () => {
       const grabRadius = Math.min(width, height) * GRAB_RADIUS_FACTOR;
 
       result.landmarks.forEach((landmarks, h) => {
-        const mapped = landmarks.map((lm) => ({
-          x: (mirrorOn ? 1 - lm.x : lm.x) * width,
-          y: lm.y * height,
-          // MediaPipe's z is depth relative to the wrist, in roughly the
-          // same normalized scale as x/y, with smaller (more negative)
-          // meaning closer to the camera. Flip and scale it into
-          // screen-ish units so a hand reaching toward the lens visibly
-          // pops toward the viewer in the 3D scene.
-          z: -lm.z * width * 0.5,
-        }));
+        const filters = landmarkFiltersRef.current[h];
+        const mapped = landmarks.map((lm, li) => {
+          const filter = filters?.[li];
+          const fx = filter ? filter.x.filter(lm.x, tSec) : lm.x;
+          const fy = filter ? filter.y.filter(lm.y, tSec) : lm.y;
+          const fz = filter ? filter.z.filter(lm.z, tSec) : lm.z;
+          return {
+            x: (mirrorOn ? 1 - fx : fx) * width,
+            y: fy * height,
+            // MediaPipe's z is depth relative to the wrist, in roughly the
+            // same normalized scale as x/y, with smaller (more negative)
+            // meaning closer to the camera. Flip and scale it into
+            // screen-ish units so a hand reaching toward the lens visibly
+            // pops toward the viewer in the 3D scene.
+            z: -fz * width * 0.5,
+          };
+        });
         landmarksOnScreen.push(mapped);
         let sx = 0;
         let sy = 0;
@@ -768,8 +844,13 @@ const HandPush = () => {
             const body = ball.body;
             const prevX = body.position.x;
             const prevY = body.position.y;
-            let vx = (pinchWorld.x - prevX) / dt;
-            let vy = (pinchWorld.y - prevY) / dt;
+            // Chase the pinch point with a proportional gain rather than
+            // reaching it exactly every frame — closing the whole gap each
+            // step turns any residual landmark noise into a full-strength
+            // jolt, while this damps it into a smooth, still-responsive
+            // follow (converges to the target in a handful of frames).
+            let vx = (pinchWorld.x - prevX) * DRAG_FOLLOW_GAIN;
+            let vy = (pinchWorld.y - prevY) * DRAG_FOLLOW_GAIN;
             const speed = Math.hypot(vx, vy);
             if (speed > MAX_DRAG_SPEED) {
               const scale = MAX_DRAG_SPEED / speed;
