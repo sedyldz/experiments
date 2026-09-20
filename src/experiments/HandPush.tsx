@@ -12,6 +12,12 @@ const MAX_HANDS = 2;
 // How far each ball idly wanders from its resting grid slot when nothing is
 // pushing it, as a fraction of the shorter screen dimension.
 const ORBIT_RADIUS_FACTOR = 0.035;
+// Thumb-tip-to-index-tip distance, as a fraction of the hand's own size
+// (wrist-to-middle-knuckle), below which the hand counts as pinching.
+const PINCH_RATIO_THRESHOLD = 0.45;
+// How close a pinch has to start to a ball to grab it, as a fraction of the
+// shorter screen dimension.
+const GRAB_RADIUS_FACTOR = 0.07;
 
 // Skeleton connections between MediaPipe's 21 hand landmarks, used to build
 // the bone cylinders of the 3D hand mesh.
@@ -61,6 +67,12 @@ interface SceneObject {
   hue: number;
   phase: number;
   orbitSpeed: number;
+  grabbedBy: number | null;
+}
+
+interface PinchState {
+  pinching: boolean;
+  grabbedIndex: number | null;
 }
 
 type Status = "idle" | "loading-model" | "starting-camera" | "running" | "error";
@@ -102,16 +114,25 @@ const HandPush = () => {
   const jointsPoolRef = useRef<THREE.Mesh[][]>([]);
   const bonesPoolRef = useRef<THREE.Mesh[][]>([]);
   const ringPoolRef = useRef<THREE.Mesh[]>([]);
+  const pinchIndicatorPoolRef = useRef<THREE.Mesh[]>([]);
 
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const objectsRef = useRef<SceneObject[]>([]);
-  const handsRef = useRef<{ points: Point[]; landmarks: Landmark3D[][] }>({
+  const handsRef = useRef<{
+    points: Point[];
+    landmarks: Landmark3D[][];
+    pinch: (Point | null)[];
+  }>({
     points: [],
     landmarks: [],
+    pinch: [],
   });
+  const pinchStateRef = useRef<PinchState[]>(
+    Array.from({ length: MAX_HANDS }, () => ({ pinching: false, grabbedIndex: null }))
+  );
   const sizeRef = useRef({ width: 0, height: 0 });
   const handCountRef = useRef(0);
 
@@ -246,16 +267,36 @@ const HandPush = () => {
     }
     ringPoolRef.current = rings;
 
+    const pinchGeometry = new THREE.SphereGeometry(1, 16, 16);
+    const pinchColor = new THREE.Color(0xffffff);
+    const pinchMaterial = new THREE.MeshStandardMaterial({
+      color: pinchColor,
+      emissive: pinchColor,
+      emissiveIntensity: 1.6,
+      roughness: 0.2,
+      metalness: 0.1,
+    });
+    const pinchIndicators: THREE.Mesh[] = [];
+    for (let h = 0; h < MAX_HANDS; h++) {
+      const mesh = new THREE.Mesh(pinchGeometry, pinchMaterial);
+      mesh.visible = false;
+      scene.add(mesh);
+      pinchIndicators.push(mesh);
+    }
+    pinchIndicatorPoolRef.current = pinchIndicators;
+
     return () => {
       renderer.dispose();
       objectGeometry.dispose();
       jointGeometry.dispose();
       boneGeometry.dispose();
       ringGeometry.dispose();
+      pinchGeometry.dispose();
       objectMeshes.forEach((mesh) => (mesh.material as THREE.Material).dispose());
       jointMaterial.dispose();
       boneMaterial.dispose();
       ringMaterial.dispose();
+      pinchMaterial.dispose();
     };
   }, []);
 
@@ -292,6 +333,7 @@ const HandPush = () => {
         hue: prev ? prev.hue : (i / OBJECT_COUNT) * 300,
         phase: prev ? prev.phase : Math.random() * Math.PI * 2,
         orbitSpeed: prev ? prev.orbitSpeed : 0.4 + Math.random() * 0.5,
+        grabbedBy: prev ? prev.grabbedBy : null,
       };
     });
   }, []);
@@ -309,15 +351,20 @@ const HandPush = () => {
     objectsRef.current.forEach((obj, i) => {
       const mesh = objectMeshes[i];
       if (!mesh) return;
+      const grabbed = obj.grabbedBy !== null;
       mesh.position.set(toWorldX(obj.x), toWorldY(obj.y), 0);
-      mesh.scale.setScalar(obj.radius);
+      mesh.scale.setScalar(obj.radius * (grabbed ? 1.2 : 1));
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      material.emissiveIntensity = grabbed ? 1.7 : 0.9;
     });
 
     const joints = jointsPoolRef.current;
     const bones = bonesPoolRef.current;
     const rings = ringPoolRef.current;
+    const pinchIndicators = pinchIndicatorPoolRef.current;
     const landmarksByHand = handsRef.current.landmarks;
     const palmPoints = handsRef.current.points;
+    const pinchPoints = handsRef.current.pinch;
     const pushRadius = Math.min(width, height) * 0.24;
     const showSkeleton = showSkeletonRef.current;
 
@@ -371,6 +418,16 @@ const HandPush = () => {
         ring.position.set(toWorldX(palm.x), toWorldY(palm.y), -1);
         ring.scale.set(pushRadius, pushRadius, 1);
       }
+
+      const pinchIndicator = pinchIndicators[h];
+      const pinch = pinchPoints[h];
+      if (!pinch) {
+        pinchIndicator.visible = false;
+      } else {
+        pinchIndicator.visible = true;
+        pinchIndicator.position.set(toWorldX(pinch.x), toWorldY(pinch.y), 20);
+        pinchIndicator.scale.setScalar(10);
+      }
     }
 
     renderer.render(scene, camera);
@@ -398,7 +455,10 @@ const HandPush = () => {
 
       const points: Point[] = [];
       const landmarksOnScreen: Landmark3D[][] = [];
-      for (const landmarks of result.landmarks) {
+      const pinchPoints: (Point | null)[] = [];
+      const grabRadius = Math.min(width, height) * GRAB_RADIUS_FACTOR;
+
+      result.landmarks.forEach((landmarks, h) => {
         const mapped = landmarks.map((lm) => ({
           x: (mirrorOn ? 1 - lm.x : lm.x) * width,
           y: lm.y * height,
@@ -417,8 +477,84 @@ const HandPush = () => {
           sy += mapped[idx].y;
         }
         points.push({ x: sx / PALM_LANDMARKS.length, y: sy / PALM_LANDMARKS.length });
+
+        if (h >= MAX_HANDS) {
+          pinchPoints.push(null);
+          return;
+        }
+
+        // Pinch = thumb tip and index tip close together, relative to the
+        // hand's own size (wrist-to-middle-knuckle) so it works regardless
+        // of how far the hand is from the camera.
+        const thumbTip = mapped[4];
+        const indexTip = mapped[8];
+        const wrist = mapped[0];
+        const middleMcp = mapped[9];
+        const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+        const handSize = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 1;
+        const isPinching = pinchDist / handSize < PINCH_RATIO_THRESHOLD;
+        const pinchPoint = { x: (thumbTip.x + indexTip.x) / 2, y: (thumbTip.y + indexTip.y) / 2 };
+        pinchPoints.push(pinchPoint);
+
+        const state = pinchStateRef.current[h];
+        if (isPinching && !state.pinching) {
+          // Pinch just started: grab the nearest free ball within reach.
+          let nearestIdx: number | null = null;
+          let nearestDist = grabRadius;
+          objectsRef.current.forEach((obj, i) => {
+            if (obj.grabbedBy !== null) return;
+            const d = Math.hypot(obj.x - pinchPoint.x, obj.y - pinchPoint.y);
+            if (d < nearestDist) {
+              nearestDist = d;
+              nearestIdx = i;
+            }
+          });
+          if (nearestIdx !== null) {
+            objectsRef.current[nearestIdx].grabbedBy = h;
+            state.grabbedIndex = nearestIdx;
+          }
+        } else if (!isPinching && state.pinching && state.grabbedIndex !== null) {
+          // Fingers opened: drop the ball right where it is. That spot
+          // becomes its new resting position instead of springing away.
+          const obj = objectsRef.current[state.grabbedIndex];
+          if (obj && obj.grabbedBy === h) {
+            obj.grabbedBy = null;
+            obj.homeX = obj.x;
+            obj.homeY = obj.y;
+          }
+          state.grabbedIndex = null;
+        }
+        state.pinching = isPinching;
+
+        if (isPinching && state.grabbedIndex !== null) {
+          const obj = objectsRef.current[state.grabbedIndex];
+          if (obj) {
+            const prevX = obj.x;
+            const prevY = obj.y;
+            obj.x = pinchPoint.x;
+            obj.y = pinchPoint.y;
+            obj.vx = (obj.x - prevX) / dt;
+            obj.vy = (obj.y - prevY) / dt;
+          }
+        }
+      });
+
+      // A hand that's no longer in frame can't still be pinching.
+      for (let h = result.landmarks.length; h < MAX_HANDS; h++) {
+        const state = pinchStateRef.current[h];
+        if (state.grabbedIndex !== null) {
+          const obj = objectsRef.current[state.grabbedIndex];
+          if (obj && obj.grabbedBy === h) {
+            obj.grabbedBy = null;
+            obj.homeX = obj.x;
+            obj.homeY = obj.y;
+          }
+        }
+        state.pinching = false;
+        state.grabbedIndex = null;
       }
-      handsRef.current = { points, landmarks: landmarksOnScreen };
+
+      handsRef.current = { points, landmarks: landmarksOnScreen, pinch: pinchPoints };
       if (points.length !== handCountRef.current) {
         handCountRef.current = points.length;
         setHandCount(points.length);
@@ -432,6 +568,7 @@ const HandPush = () => {
       const t = time / 1000;
 
       for (const obj of objectsRef.current) {
+        if (obj.grabbedBy !== null) continue;
         let fx = 0;
         let fy = 0;
         for (const hand of points) {
@@ -512,9 +649,20 @@ const HandPush = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     lastTimeRef.current = null;
-    handsRef.current = { points: [], landmarks: [] };
+    handsRef.current = { points: [], landmarks: [], pinch: [] };
     handCountRef.current = 0;
     setHandCount(0);
+    objectsRef.current.forEach((obj) => {
+      if (obj.grabbedBy !== null) {
+        obj.grabbedBy = null;
+        obj.homeX = obj.x;
+        obj.homeY = obj.y;
+      }
+    });
+    pinchStateRef.current.forEach((state) => {
+      state.pinching = false;
+      state.grabbedIndex = null;
+    });
     setStatus("idle");
   }, []);
 
@@ -616,8 +764,8 @@ const HandPush = () => {
           <h2 className="text-lg font-semibold">Hand Push</h2>
           <p className="text-white/70">
             Real hand tracking, rendered as a 3D mesh, pushes these balls out
-            of the way. They drift gently on their own and spring back to
-            their resting spots once your hand is gone.
+            of the way. Pinch (thumb and index finger together) on a ball to
+            grab it, move your hand, then open your fingers to drop it there.
           </p>
 
           {!isRunning ? (
