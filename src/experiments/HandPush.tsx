@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import * as CANNON from "cannon-es";
 import {
   FilesetResolver,
   HandLandmarker,
@@ -7,17 +8,29 @@ import {
 } from "@mediapipe/tasks-vision";
 
 const OBJECT_COUNT = 16;
-const OBJECT_COLS = 4;
 const MAX_HANDS = 2;
-// How far each ball idly wanders from its resting grid slot when nothing is
-// pushing it, as a fraction of the shorter screen dimension.
-const ORBIT_RADIUS_FACTOR = 0.035;
+
 // Thumb-tip-to-index-tip distance, as a fraction of the hand's own size
 // (wrist-to-middle-knuckle), below which the hand counts as pinching.
 const PINCH_RATIO_THRESHOLD = 0.45;
 // How close a pinch has to start to a ball to grab it, as a fraction of the
 // shorter screen dimension.
 const GRAB_RADIUS_FACTOR = 0.07;
+
+// Real-world-ish rigid body tuning. Units are pixels/seconds, not meters —
+// there's no true physical scale on screen, so these are picked by feel
+// (see the physics-tune scripts used during development) rather than derived.
+const GRAVITY = 1400;
+const BALL_FRICTION = 0.45;
+const BALL_RESTITUTION = 0.25;
+const LINEAR_DAMPING = 0.35;
+const ANGULAR_DAMPING = 0.5;
+const SOLVER_ITERATIONS = 20;
+const PUSH_FORCE_SCALE = 26000;
+// Caps the velocity a pinch-dragged ball can report to the physics engine,
+// so a noisy hand-tracking frame (a sudden jump) can't inject a burst of
+// energy into whatever it's dropped on top of.
+const MAX_DRAG_SPEED = 4000;
 
 // Skeleton connections between MediaPipe's 21 hand landmarks, used to build
 // the bone cylinders of the 3D hand mesh.
@@ -47,6 +60,16 @@ const PALM_LANDMARKS = [0, 5, 9, 13, 17];
 
 const UP = new THREE.Vector3(0, 1, 0);
 
+// The hand-tracking pipeline works in screen-pixel space (origin top-left,
+// y down); the physics/render world is centered on screen with y up. These
+// two helpers convert between them.
+function toWorldX(x: number, width: number) {
+  return x - width / 2;
+}
+function toWorldY(y: number, height: number) {
+  return height / 2 - y;
+}
+
 interface Point {
   x: number;
   y: number;
@@ -56,17 +79,11 @@ interface Landmark3D extends Point {
   z: number;
 }
 
-interface SceneObject {
-  homeX: number;
-  homeY: number;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
+interface Ball {
+  body: CANNON.Body;
+  mesh: THREE.Mesh;
   radius: number;
   hue: number;
-  phase: number;
-  orbitSpeed: number;
   grabbedBy: number | null;
 }
 
@@ -77,30 +94,16 @@ interface PinchState {
 
 type Status = "idle" | "loading-model" | "starting-camera" | "running" | "error";
 
-function computeHomeLayout(width: number, height: number): Point[] {
-  const rows = Math.ceil(OBJECT_COUNT / OBJECT_COLS);
-  const marginX = width * 0.16;
-  const marginY = height * 0.2;
-  const cellW = OBJECT_COLS > 1 ? (width - marginX * 2) / (OBJECT_COLS - 1) : 0;
-  const cellH = rows > 1 ? (height - marginY * 2) / (rows - 1) : 0;
-  const positions: Point[] = [];
-  for (let i = 0; i < OBJECT_COUNT; i++) {
-    const col = i % OBJECT_COLS;
-    const row = Math.floor(i / OBJECT_COLS);
-    positions.push({ x: marginX + col * cellW, y: marginY + row * cellH });
-  }
-  return positions;
-}
-
 /**
  * Hand Push
  *
  * A projection-mapping sketch: real hand tracking (MediaPipe's
- * HandLandmarker, running fully client-side) drives a little 3D physics
- * scene rendered with Three.js. Each hand is drawn as a lit skeletal mesh
- * (joints + tapered bones, using MediaPipe's real depth per landmark), and a
- * grid of glowing balls idly drifts near its resting spot, fleeing any hand
- * that gets close and springing back once it's gone.
+ * HandLandmarker, running fully client-side) drives a little rigid-body
+ * physics scene (Three.js + cannon-es). A grid of balls drops under gravity
+ * and settles on the floor. An open hand shoves nearby balls away; a pinch
+ * (thumb and index tip together) grabs the nearest ball, drags it 1:1 with
+ * your fingers, and lets real physics take over the instant you let go —
+ * it falls, collides, and can pile up with the others.
  */
 const HandPush = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,7 +113,11 @@ const HandPush = () => {
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const objectMeshesRef = useRef<THREE.Mesh[]>([]);
+  const worldRef = useRef<CANNON.World | null>(null);
+  const wallsRef = useRef<CANNON.Body[]>([]);
+  const ballsRef = useRef<Ball[]>([]);
+  const initializedLayoutRef = useRef(false);
+
   const jointsPoolRef = useRef<THREE.Mesh[][]>([]);
   const bonesPoolRef = useRef<THREE.Mesh[][]>([]);
   const ringPoolRef = useRef<THREE.Mesh[]>([]);
@@ -120,7 +127,6 @@ const HandPush = () => {
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const landmarkerRef = useRef<HandLandmarker | null>(null);
-  const objectsRef = useRef<SceneObject[]>([]);
   const handsRef = useRef<{
     points: Point[];
     landmarks: Landmark3D[][];
@@ -158,8 +164,10 @@ const HandPush = () => {
   const [showHint, setShowHint] = useState(true);
   const [handCount, setHandCount] = useState(0);
 
-  // Sets up the Three.js scene once: renderer, camera, lights, and pools of
-  // reusable meshes for the balls and for up to MAX_HANDS hand skeletons.
+  // Sets up the Three.js scene and the cannon-es physics world once:
+  // renderer, camera, lights, static floor/walls, the balls (body + mesh
+  // per ball), and pools of reusable meshes for up to MAX_HANDS hand
+  // skeletons.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -186,8 +194,47 @@ const HandPush = () => {
     keyLight.position.set(0, 150, 500);
     scene.add(keyLight);
 
-    const objectGeometry = new THREE.SphereGeometry(1, 20, 20);
-    const objectMeshes: THREE.Mesh[] = [];
+    const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -GRAVITY, 0) });
+    world.broadphase = new CANNON.NaiveBroadphase();
+    (world.solver as CANNON.GSSolver).iterations = SOLVER_ITERATIONS;
+    world.allowSleep = true;
+    worldRef.current = world;
+
+    const ballMaterial = new CANNON.Material("ball");
+    const wallMaterial = new CANNON.Material("wall");
+    world.addContactMaterial(
+      new CANNON.ContactMaterial(ballMaterial, ballMaterial, {
+        friction: BALL_FRICTION,
+        restitution: BALL_RESTITUTION,
+      })
+    );
+    world.addContactMaterial(
+      new CANNON.ContactMaterial(ballMaterial, wallMaterial, {
+        friction: BALL_FRICTION,
+        restitution: 0.3,
+      })
+    );
+
+    const makeWall = (axis: CANNON.Vec3, angle: number) => {
+      const body = new CANNON.Body({ mass: 0, material: wallMaterial });
+      body.addShape(new CANNON.Plane());
+      body.quaternion.setFromAxisAngle(axis, angle);
+      world.addBody(body);
+      return body;
+    };
+    // Floor, ceiling, left wall, right wall — an invisible box containing
+    // the balls, sized to the screen in resizeCanvas. The scene is confined
+    // to the z=0 plane (see each ball's linearFactor/angularFactor below),
+    // so no front/back wall is needed.
+    wallsRef.current = [
+      makeWall(new CANNON.Vec3(1, 0, 0), -Math.PI / 2),
+      makeWall(new CANNON.Vec3(1, 0, 0), Math.PI / 2),
+      makeWall(new CANNON.Vec3(0, 1, 0), Math.PI / 2),
+      makeWall(new CANNON.Vec3(0, 1, 0), -Math.PI / 2),
+    ];
+
+    const ballGeometry = new THREE.SphereGeometry(1, 20, 20);
+    const balls: Ball[] = [];
     for (let i = 0; i < OBJECT_COUNT; i++) {
       const hue = (i / OBJECT_COUNT) * 300;
       const color = new THREE.Color().setHSL(hue / 360, 0.75, 0.6);
@@ -198,11 +245,29 @@ const HandPush = () => {
         roughness: 0.35,
         metalness: 0.1,
       });
-      const mesh = new THREE.Mesh(objectGeometry, material);
+      const mesh = new THREE.Mesh(ballGeometry, material);
       scene.add(mesh);
-      objectMeshes.push(mesh);
+
+      const radius = 14 + (i % 3) * 5;
+      const body = new CANNON.Body({
+        mass: radius * radius * 0.02,
+        shape: new CANNON.Sphere(radius),
+        material: ballMaterial,
+        linearDamping: LINEAR_DAMPING,
+        angularDamping: ANGULAR_DAMPING,
+        // Confine the simulation to the camera-facing plane: no z motion,
+        // only spin around z (so a ball rolling sideways visibly rotates).
+        linearFactor: new CANNON.Vec3(1, 1, 0),
+        angularFactor: new CANNON.Vec3(0, 0, 1),
+      });
+      // Placeholder position; resizeCanvas's first call scatters these
+      // properly once the container's real size is known.
+      body.position.set(0, 0, 0);
+      world.addBody(body);
+
+      balls.push({ body, mesh, radius, hue, grabbedBy: null });
     }
-    objectMeshesRef.current = objectMeshes;
+    ballsRef.current = balls;
 
     const jointGeometry = new THREE.SphereGeometry(1, 12, 12);
     const jointColor = new THREE.Color().setHSL(0.56, 0.85, 0.65);
@@ -287,12 +352,12 @@ const HandPush = () => {
 
     return () => {
       renderer.dispose();
-      objectGeometry.dispose();
+      ballGeometry.dispose();
       jointGeometry.dispose();
       boneGeometry.dispose();
       ringGeometry.dispose();
       pinchGeometry.dispose();
-      objectMeshes.forEach((mesh) => (mesh.material as THREE.Material).dispose());
+      balls.forEach((ball) => (ball.mesh.material as THREE.Material).dispose());
       jointMaterial.dispose();
       boneMaterial.dispose();
       ringMaterial.dispose();
@@ -307,8 +372,9 @@ const HandPush = () => {
     if (!container) return;
     const { width, height } = container.getBoundingClientRect();
     sizeRef.current = { width, height };
+    if (width <= 0 || height <= 0) return;
 
-    if (renderer && camera && width > 0 && height > 0) {
+    if (renderer && camera) {
       renderer.setSize(width, height);
       camera.aspect = width / height;
       const fovRad = (camera.fov * Math.PI) / 180;
@@ -318,24 +384,30 @@ const HandPush = () => {
       camera.updateProjectionMatrix();
     }
 
-    const homes = computeHomeLayout(width, height);
-    const existing = objectsRef.current;
-    objectsRef.current = homes.map((home, i) => {
-      const prev = existing[i];
-      return {
-        homeX: home.x,
-        homeY: home.y,
-        x: prev ? prev.x : home.x,
-        y: prev ? prev.y : home.y,
-        vx: prev ? prev.vx : 0,
-        vy: prev ? prev.vy : 0,
-        radius: prev ? prev.radius : 14 + (i % 3) * 5,
-        hue: prev ? prev.hue : (i / OBJECT_COUNT) * 300,
-        phase: prev ? prev.phase : Math.random() * Math.PI * 2,
-        orbitSpeed: prev ? prev.orbitSpeed : 0.4 + Math.random() * 0.5,
-        grabbedBy: prev ? prev.grabbedBy : null,
-      };
-    });
+    const [floor, ceiling, left, right] = wallsRef.current;
+    if (floor) {
+      floor.position.set(0, -height / 2, 0);
+      ceiling.position.set(0, height / 2, 0);
+      left.position.set(-width / 2, 0, 0);
+      right.position.set(width / 2, 0, 0);
+    }
+
+    // Scatter the balls near the top once, the first time we know the real
+    // screen size. They fall and settle under gravity as soon as the
+    // simulation starts stepping.
+    if (!initializedLayoutRef.current) {
+      initializedLayoutRef.current = true;
+      const cols = 4;
+      ballsRef.current.forEach((ball, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = -width * 0.3 + col * ((width * 0.6) / (cols - 1)) + (Math.random() - 0.5) * 10;
+        const y = height * 0.3 + row * 50;
+        ball.body.position.set(x, y, 0);
+        ball.body.velocity.set(0, 0, 0);
+        ball.body.angularVelocity.set(0, 0, 0);
+      });
+    }
   }, []);
 
   const renderScene = useCallback((width: number, height: number) => {
@@ -344,16 +416,17 @@ const HandPush = () => {
     const camera = cameraRef.current;
     if (!renderer || !scene || !camera) return;
 
-    const toWorldX = (x: number) => x - width / 2;
-    const toWorldY = (y: number) => height / 2 - y;
-
-    const objectMeshes = objectMeshesRef.current;
-    objectsRef.current.forEach((obj, i) => {
-      const mesh = objectMeshes[i];
-      if (!mesh) return;
-      const grabbed = obj.grabbedBy !== null;
-      mesh.position.set(toWorldX(obj.x), toWorldY(obj.y), 0);
-      mesh.scale.setScalar(obj.radius * (grabbed ? 1.2 : 1));
+    ballsRef.current.forEach((ball) => {
+      const { body, mesh, radius, grabbedBy } = ball;
+      const grabbed = grabbedBy !== null;
+      mesh.position.set(body.position.x, body.position.y, body.position.z);
+      mesh.quaternion.set(
+        body.quaternion.x,
+        body.quaternion.y,
+        body.quaternion.z,
+        body.quaternion.w
+      );
+      mesh.scale.setScalar(radius * (grabbed ? 1.15 : 1));
       const material = mesh.material as THREE.MeshStandardMaterial;
       material.emissiveIntensity = grabbed ? 1.7 : 0.9;
     });
@@ -379,7 +452,8 @@ const HandPush = () => {
         handBones.forEach((mesh) => (mesh.visible = false));
       } else {
         const worldPts = landmarks.map(
-          (lm) => new THREE.Vector3(toWorldX(lm.x), toWorldY(lm.y), lm.z)
+          (lm) =>
+            new THREE.Vector3(toWorldX(lm.x, width), toWorldY(lm.y, height), lm.z)
         );
         handJoints.forEach((mesh, j) => {
           const p = worldPts[j];
@@ -415,7 +489,7 @@ const HandPush = () => {
         ring.visible = false;
       } else {
         ring.visible = true;
-        ring.position.set(toWorldX(palm.x), toWorldY(palm.y), -1);
+        ring.position.set(toWorldX(palm.x, width), toWorldY(palm.y, height), -1);
         ring.scale.set(pushRadius, pushRadius, 1);
       }
 
@@ -425,7 +499,11 @@ const HandPush = () => {
         pinchIndicator.visible = false;
       } else {
         pinchIndicator.visible = true;
-        pinchIndicator.position.set(toWorldX(pinch.x), toWorldY(pinch.y), 20);
+        pinchIndicator.position.set(
+          toWorldX(pinch.x, width),
+          toWorldY(pinch.y, height),
+          20
+        );
         pinchIndicator.scale.setScalar(10);
       }
     }
@@ -439,12 +517,13 @@ const HandPush = () => {
 
       const video = videoRef.current;
       const landmarker = landmarkerRef.current;
-      if (!video || !landmarker) return;
+      const world = worldRef.current;
+      if (!video || !landmarker || !world) return;
       if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
       const dt = lastTimeRef.current
-        ? Math.min((time - lastTimeRef.current) / 16.6667, 3)
-        : 1;
+        ? Math.min((time - lastTimeRef.current) / 1000, 1 / 30)
+        : 1 / 60;
       lastTimeRef.current = time;
 
       const { width, height } = sizeRef.current;
@@ -455,7 +534,7 @@ const HandPush = () => {
 
       const points: Point[] = [];
       const landmarksOnScreen: Landmark3D[][] = [];
-      const pinchPoints: (Point | null)[] = [];
+      const pinchPointsScreen: (Point | null)[] = [];
       const grabRadius = Math.min(width, height) * GRAB_RADIUS_FACTOR;
 
       result.landmarks.forEach((landmarks, h) => {
@@ -476,10 +555,11 @@ const HandPush = () => {
           sx += mapped[idx].x;
           sy += mapped[idx].y;
         }
-        points.push({ x: sx / PALM_LANDMARKS.length, y: sy / PALM_LANDMARKS.length });
+        const palmScreen = { x: sx / PALM_LANDMARKS.length, y: sy / PALM_LANDMARKS.length };
+        points.push({ x: toWorldX(palmScreen.x, width), y: toWorldY(palmScreen.y, height) });
 
         if (h >= MAX_HANDS) {
-          pinchPoints.push(null);
+          pinchPointsScreen.push(null);
           return;
         }
 
@@ -493,48 +573,73 @@ const HandPush = () => {
         const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
         const handSize = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y) || 1;
         const isPinching = pinchDist / handSize < PINCH_RATIO_THRESHOLD;
-        const pinchPoint = { x: (thumbTip.x + indexTip.x) / 2, y: (thumbTip.y + indexTip.y) / 2 };
-        pinchPoints.push(pinchPoint);
+        const pinchScreen = { x: (thumbTip.x + indexTip.x) / 2, y: (thumbTip.y + indexTip.y) / 2 };
+        pinchPointsScreen.push(pinchScreen);
+        const pinchWorld = {
+          x: toWorldX(pinchScreen.x, width),
+          y: toWorldY(pinchScreen.y, height),
+        };
 
         const state = pinchStateRef.current[h];
+        const balls = ballsRef.current;
+
         if (isPinching && !state.pinching) {
           // Pinch just started: grab the nearest free ball within reach.
           let nearestIdx: number | null = null;
           let nearestDist = grabRadius;
-          objectsRef.current.forEach((obj, i) => {
-            if (obj.grabbedBy !== null) return;
-            const d = Math.hypot(obj.x - pinchPoint.x, obj.y - pinchPoint.y);
+          balls.forEach((ball, i) => {
+            if (ball.grabbedBy !== null) return;
+            const d = Math.hypot(
+              ball.body.position.x - pinchWorld.x,
+              ball.body.position.y - pinchWorld.y
+            );
             if (d < nearestDist) {
               nearestDist = d;
               nearestIdx = i;
             }
           });
           if (nearestIdx !== null) {
-            objectsRef.current[nearestIdx].grabbedBy = h;
+            const ball = balls[nearestIdx];
+            ball.grabbedBy = h;
+            ball.body.type = CANNON.Body.KINEMATIC;
+            ball.body.velocity.set(0, 0, 0);
+            ball.body.angularVelocity.set(0, 0, 0);
             state.grabbedIndex = nearestIdx;
           }
         } else if (!isPinching && state.pinching && state.grabbedIndex !== null) {
-          // Fingers opened: drop the ball right where it is. That spot
-          // becomes its new resting position instead of springing away.
-          const obj = objectsRef.current[state.grabbedIndex];
-          if (obj && obj.grabbedBy === h) {
-            obj.grabbedBy = null;
-            obj.homeX = obj.x;
-            obj.homeY = obj.y;
+          // Fingers opened: hand the ball back to the physics simulation
+          // right where it is, carrying whatever velocity it was just
+          // dragged with so letting go mid-motion gives it a little toss.
+          const ball = balls[state.grabbedIndex];
+          if (ball && ball.grabbedBy === h) {
+            ball.grabbedBy = null;
+            ball.body.type = CANNON.Body.DYNAMIC;
+            ball.body.wakeUp();
           }
           state.grabbedIndex = null;
         }
         state.pinching = isPinching;
 
         if (isPinching && state.grabbedIndex !== null) {
-          const obj = objectsRef.current[state.grabbedIndex];
-          if (obj) {
-            const prevX = obj.x;
-            const prevY = obj.y;
-            obj.x = pinchPoint.x;
-            obj.y = pinchPoint.y;
-            obj.vx = (obj.x - prevX) / dt;
-            obj.vy = (obj.y - prevY) / dt;
+          const ball = balls[state.grabbedIndex];
+          if (ball) {
+            const body = ball.body;
+            const prevX = body.position.x;
+            const prevY = body.position.y;
+            let vx = (pinchWorld.x - prevX) / dt;
+            let vy = (pinchWorld.y - prevY) / dt;
+            const speed = Math.hypot(vx, vy);
+            if (speed > MAX_DRAG_SPEED) {
+              const scale = MAX_DRAG_SPEED / speed;
+              vx *= scale;
+              vy *= scale;
+            }
+            // Kinematic bodies still get `position += velocity * dt` applied
+            // during world.step, so setting velocity alone is enough to
+            // reach the pinch point each frame — also setting position
+            // directly here would apply that displacement twice and send
+            // the ball racing ahead of your fingers.
+            body.velocity.set(vx, vy, 0);
           }
         }
       });
@@ -543,71 +648,48 @@ const HandPush = () => {
       for (let h = result.landmarks.length; h < MAX_HANDS; h++) {
         const state = pinchStateRef.current[h];
         if (state.grabbedIndex !== null) {
-          const obj = objectsRef.current[state.grabbedIndex];
-          if (obj && obj.grabbedBy === h) {
-            obj.grabbedBy = null;
-            obj.homeX = obj.x;
-            obj.homeY = obj.y;
+          const ball = ballsRef.current[state.grabbedIndex];
+          if (ball && ball.grabbedBy === h) {
+            ball.grabbedBy = null;
+            ball.body.type = CANNON.Body.DYNAMIC;
+            ball.body.wakeUp();
           }
         }
         state.pinching = false;
         state.grabbedIndex = null;
       }
 
-      handsRef.current = { points, landmarks: landmarksOnScreen, pinch: pinchPoints };
+      handsRef.current = { points, landmarks: landmarksOnScreen, pinch: pinchPointsScreen };
       if (points.length !== handCountRef.current) {
         handCountRef.current = points.length;
         setHandCount(points.length);
       }
 
+      // Open-hand push: an un-grabbed ball near a palm gets shoved away.
+      // Real force (not scaled by mass), so heavier/bigger balls resist it
+      // more, same as a real shove would.
       const pushRadius = Math.min(width, height) * 0.24;
-      const pushForce = (pushStrengthRef.current / 100) * 16;
-      const springK = 0.36;
-      const damping = 0.9;
-      const orbitRadius = Math.min(width, height) * ORBIT_RADIUS_FACTOR;
-      const t = time / 1000;
-
-      for (const obj of objectsRef.current) {
-        if (obj.grabbedBy !== null) continue;
-        let fx = 0;
-        let fy = 0;
+      const pushForce = (pushStrengthRef.current / 100) * PUSH_FORCE_SCALE;
+      for (const ball of ballsRef.current) {
+        if (ball.grabbedBy !== null) continue;
         for (const hand of points) {
-          const dx = obj.x - hand.x;
-          const dy = obj.y - hand.y;
+          const dx = ball.body.position.x - hand.x;
+          const dy = ball.body.position.y - hand.y;
           const dist = Math.hypot(dx, dy);
           if (dist >= pushRadius) continue;
           const falloff = 1 - dist / pushRadius;
-          const force = pushForce * falloff * falloff;
+          const mag = pushForce * falloff * falloff;
           if (dist < 1) {
-            // Hand landed almost exactly on the object: dx/dy give no usable
-            // direction, so escape along a stable per-object angle instead
-            // of staying pinned in place.
-            const angle = obj.hue * (Math.PI / 180);
-            fx += Math.cos(angle) * force;
-            fy += Math.sin(angle) * force;
+            const angle = ball.hue * (Math.PI / 180);
+            ball.body.applyForce(new CANNON.Vec3(Math.cos(angle) * mag, Math.sin(angle) * mag, 0));
           } else {
-            fx += (dx / dist) * force;
-            fy += (dy / dist) * force;
+            ball.body.applyForce(new CANNON.Vec3((dx / dist) * mag, (dy / dist) * mag, 0));
           }
+          ball.body.wakeUp();
         }
-
-        // Idle wander: rather than spring to a fixed point, spring toward a
-        // slowly orbiting target near home so the balls stay gently in
-        // motion even when no hand is around.
-        const targetX =
-          obj.homeX + Math.cos(t * obj.orbitSpeed + obj.phase) * orbitRadius;
-        const targetY =
-          obj.homeY +
-          Math.sin(t * obj.orbitSpeed * 0.8 + obj.phase) * orbitRadius;
-        fx += (targetX - obj.x) * springK;
-        fy += (targetY - obj.y) * springK;
-
-        const dampFactor = Math.pow(damping, dt);
-        obj.vx = (obj.vx + fx * dt) * dampFactor;
-        obj.vy = (obj.vy + fy * dt) * dampFactor;
-        obj.x += obj.vx * dt;
-        obj.y += obj.vy * dt;
       }
+
+      world.step(1 / 60, dt, 5);
 
       renderScene(width, height);
     },
@@ -652,11 +734,11 @@ const HandPush = () => {
     handsRef.current = { points: [], landmarks: [], pinch: [] };
     handCountRef.current = 0;
     setHandCount(0);
-    objectsRef.current.forEach((obj) => {
-      if (obj.grabbedBy !== null) {
-        obj.grabbedBy = null;
-        obj.homeX = obj.x;
-        obj.homeY = obj.y;
+    ballsRef.current.forEach((ball) => {
+      if (ball.grabbedBy !== null) {
+        ball.grabbedBy = null;
+        ball.body.type = CANNON.Body.DYNAMIC;
+        ball.body.wakeUp();
       }
     });
     pinchStateRef.current.forEach((state) => {
@@ -763,9 +845,10 @@ const HandPush = () => {
         <div className="absolute top-4 left-4 z-10 w-72 space-y-3 rounded-xl bg-black/60 p-4 text-sm text-white backdrop-blur">
           <h2 className="text-lg font-semibold">Hand Push</h2>
           <p className="text-white/70">
-            Real hand tracking, rendered as a 3D mesh, pushes these balls out
-            of the way. Pinch (thumb and index finger together) on a ball to
-            grab it, move your hand, then open your fingers to drop it there.
+            Real hand tracking drives a real rigid-body physics scene. The
+            balls drop, collide, and settle under gravity. An open hand
+            shoves them; pinch (thumb and index together) to grab one, drag
+            it, and let go to drop it — physics takes over from there.
           </p>
 
           {!isRunning ? (
