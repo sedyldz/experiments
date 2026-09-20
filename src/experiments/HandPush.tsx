@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import * as THREE from "three";
 import {
   FilesetResolver,
   HandLandmarker,
@@ -7,9 +8,13 @@ import {
 
 const OBJECT_COUNT = 16;
 const OBJECT_COLS = 4;
+const MAX_HANDS = 2;
+// How far each ball idly wanders from its resting grid slot when nothing is
+// pushing it, as a fraction of the shorter screen dimension.
+const ORBIT_RADIUS_FACTOR = 0.035;
 
-// Skeleton connections between MediaPipe's 21 hand landmarks, used only to
-// draw a debug overlay so the operator can see what the camera is tracking.
+// Skeleton connections between MediaPipe's 21 hand landmarks, used to build
+// the bone cylinders of the 3D hand mesh.
 const HAND_CONNECTIONS: [number, number][] = [
   [0, 1], [1, 2], [2, 3], [3, 4],
   [0, 5], [5, 6], [6, 7], [7, 8],
@@ -19,13 +24,30 @@ const HAND_CONNECTIONS: [number, number][] = [
   [0, 17],
 ];
 
+// Rough per-bone thickness (wider near the palm, tapering toward fingertips),
+// same order/length as HAND_CONNECTIONS.
+const BONE_RADII = [
+  7, 6, 5, 4,
+  8, 6, 5, 4,
+  7, 6, 5, 4,
+  7, 6, 5, 4,
+  6, 5, 4, 3,
+  8,
+];
+
 // A stable, low-jitter stand-in for "palm center": the wrist plus the four
 // finger MCP knuckles, averaged.
 const PALM_LANDMARKS = [0, 5, 9, 13, 17];
 
+const UP = new THREE.Vector3(0, 1, 0);
+
 interface Point {
   x: number;
   y: number;
+}
+
+interface Landmark3D extends Point {
+  z: number;
 }
 
 interface SceneObject {
@@ -37,6 +59,8 @@ interface SceneObject {
   vy: number;
   radius: number;
   hue: number;
+  phase: number;
+  orbitSpeed: number;
 }
 
 type Status = "idle" | "loading-model" | "starting-camera" | "running" | "error";
@@ -60,21 +84,31 @@ function computeHomeLayout(width: number, height: number): Point[] {
  * Hand Push
  *
  * A projection-mapping sketch: real hand tracking (MediaPipe's
- * HandLandmarker, running fully client-side) drives a little physics scene.
- * Objects flee any hand that gets close to them and spring back to their
- * resting grid position once no hand is nearby.
+ * HandLandmarker, running fully client-side) drives a little 3D physics
+ * scene rendered with Three.js. Each hand is drawn as a lit skeletal mesh
+ * (joints + tapered bones, using MediaPipe's real depth per landmark), and a
+ * grid of glowing balls idly drifts near its resting spot, fleeing any hand
+ * that gets close and springing back once it's gone.
  */
 const HandPush = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const objectMeshesRef = useRef<THREE.Mesh[]>([]);
+  const jointsPoolRef = useRef<THREE.Mesh[][]>([]);
+  const bonesPoolRef = useRef<THREE.Mesh[][]>([]);
+  const ringPoolRef = useRef<THREE.Mesh[]>([]);
+
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const objectsRef = useRef<SceneObject[]>([]);
-  const handsRef = useRef<{ points: Point[]; landmarks: Point[][] }>({
+  const handsRef = useRef<{ points: Point[]; landmarks: Landmark3D[][] }>({
     points: [],
     landmarks: [],
   });
@@ -103,19 +137,145 @@ const HandPush = () => {
   const [showHint, setShowHint] = useState(true);
   const [handCount, setHandCount] = useState(0);
 
-  const resizeCanvas = useCallback(() => {
+  // Sets up the Three.js scene once: renderer, camera, lights, and pools of
+  // reusable meshes for the balls and for up to MAX_HANDS hand skeletons.
+  useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    rendererRef.current = renderer;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05050a);
+    sceneRef.current = scene;
+
+    const camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+    camera.position.set(0, 0, 800);
+    camera.lookAt(0, 0, 0);
+    cameraRef.current = camera;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    scene.add(new THREE.HemisphereLight(0x88aaff, 0x140022, 0.5));
+    const keyLight = new THREE.PointLight(0xffffff, 1.4, 0, 2);
+    keyLight.position.set(0, 150, 500);
+    scene.add(keyLight);
+
+    const objectGeometry = new THREE.SphereGeometry(1, 20, 20);
+    const objectMeshes: THREE.Mesh[] = [];
+    for (let i = 0; i < OBJECT_COUNT; i++) {
+      const hue = (i / OBJECT_COUNT) * 300;
+      const color = new THREE.Color().setHSL(hue / 360, 0.75, 0.6);
+      const material = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 0.9,
+        roughness: 0.35,
+        metalness: 0.1,
+      });
+      const mesh = new THREE.Mesh(objectGeometry, material);
+      scene.add(mesh);
+      objectMeshes.push(mesh);
+    }
+    objectMeshesRef.current = objectMeshes;
+
+    const jointGeometry = new THREE.SphereGeometry(1, 12, 12);
+    const jointColor = new THREE.Color().setHSL(0.56, 0.85, 0.65);
+    const jointMaterial = new THREE.MeshStandardMaterial({
+      color: jointColor,
+      emissive: jointColor,
+      emissiveIntensity: 1,
+      roughness: 0.3,
+      metalness: 0.2,
+      transparent: true,
+      opacity: 0.95,
+    });
+    const boneGeometry = new THREE.CylinderGeometry(1, 1, 1, 8);
+    const boneMaterial = new THREE.MeshStandardMaterial({
+      color: jointColor,
+      emissive: jointColor,
+      emissiveIntensity: 0.6,
+      roughness: 0.4,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.75,
+    });
+
+    const joints: THREE.Mesh[][] = [];
+    const bones: THREE.Mesh[][] = [];
+    for (let h = 0; h < MAX_HANDS; h++) {
+      const handJoints: THREE.Mesh[] = [];
+      for (let j = 0; j < 21; j++) {
+        const mesh = new THREE.Mesh(jointGeometry, jointMaterial);
+        mesh.visible = false;
+        scene.add(mesh);
+        handJoints.push(mesh);
+      }
+      joints.push(handJoints);
+
+      const handBones: THREE.Mesh[] = [];
+      for (let b = 0; b < HAND_CONNECTIONS.length; b++) {
+        const mesh = new THREE.Mesh(boneGeometry, boneMaterial);
+        mesh.visible = false;
+        scene.add(mesh);
+        handBones.push(mesh);
+      }
+      bones.push(handBones);
+    }
+    jointsPoolRef.current = joints;
+    bonesPoolRef.current = bones;
+
+    const ringGeometry = new THREE.RingGeometry(0.96, 1, 64);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.12,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const rings: THREE.Mesh[] = [];
+    for (let h = 0; h < MAX_HANDS; h++) {
+      const mesh = new THREE.Mesh(ringGeometry, ringMaterial);
+      mesh.visible = false;
+      scene.add(mesh);
+      rings.push(mesh);
+    }
+    ringPoolRef.current = rings;
+
+    return () => {
+      renderer.dispose();
+      objectGeometry.dispose();
+      jointGeometry.dispose();
+      boneGeometry.dispose();
+      ringGeometry.dispose();
+      objectMeshes.forEach((mesh) => (mesh.material as THREE.Material).dispose());
+      jointMaterial.dispose();
+      boneMaterial.dispose();
+      ringMaterial.dispose();
+    };
+  }, []);
+
+  const resizeCanvas = useCallback(() => {
     const container = containerRef.current;
-    if (!canvas || !container) return;
-    const dpr = window.devicePixelRatio || 1;
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    if (!container) return;
     const { width, height } = container.getBoundingClientRect();
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    const ctx = canvas.getContext("2d");
-    ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
     sizeRef.current = { width, height };
+
+    if (renderer && camera && width > 0 && height > 0) {
+      renderer.setSize(width, height);
+      camera.aspect = width / height;
+      const fovRad = (camera.fov * Math.PI) / 180;
+      const cameraZ = height / (2 * Math.tan(fovRad / 2));
+      camera.position.z = cameraZ;
+      camera.far = cameraZ * 4;
+      camera.updateProjectionMatrix();
+    }
 
     const homes = computeHomeLayout(width, height);
     const existing = objectsRef.current;
@@ -130,74 +290,90 @@ const HandPush = () => {
         vy: prev ? prev.vy : 0,
         radius: prev ? prev.radius : 14 + (i % 3) * 5,
         hue: prev ? prev.hue : (i / OBJECT_COUNT) * 300,
+        phase: prev ? prev.phase : Math.random() * Math.PI * 2,
+        orbitSpeed: prev ? prev.orbitSpeed : 0.4 + Math.random() * 0.5,
       };
     });
   }, []);
 
-  const draw = useCallback((width: number, height: number) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!ctx) return;
+  const renderScene = useCallback((width: number, height: number) => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (!renderer || !scene || !camera) return;
 
-    ctx.fillStyle = "#050507";
-    ctx.fillRect(0, 0, width, height);
+    const toWorldX = (x: number) => x - width / 2;
+    const toWorldY = (y: number) => height / 2 - y;
 
+    const objectMeshes = objectMeshesRef.current;
+    objectsRef.current.forEach((obj, i) => {
+      const mesh = objectMeshes[i];
+      if (!mesh) return;
+      mesh.position.set(toWorldX(obj.x), toWorldY(obj.y), 0);
+      mesh.scale.setScalar(obj.radius);
+    });
+
+    const joints = jointsPoolRef.current;
+    const bones = bonesPoolRef.current;
+    const rings = ringPoolRef.current;
+    const landmarksByHand = handsRef.current.landmarks;
+    const palmPoints = handsRef.current.points;
     const pushRadius = Math.min(width, height) * 0.24;
+    const showSkeleton = showSkeletonRef.current;
 
-    if (showSkeletonRef.current) {
-      ctx.save();
-      ctx.strokeStyle = "rgba(120, 200, 255, 0.45)";
-      ctx.lineWidth = 2;
-      ctx.fillStyle = "rgba(170, 225, 255, 0.9)";
-      for (const landmarks of handsRef.current.landmarks) {
-        for (const [a, b] of HAND_CONNECTIONS) {
-          ctx.beginPath();
-          ctx.moveTo(landmarks[a].x, landmarks[a].y);
-          ctx.lineTo(landmarks[b].x, landmarks[b].y);
-          ctx.stroke();
-        }
-        for (const p of landmarks) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
+    for (let h = 0; h < MAX_HANDS; h++) {
+      const landmarks = landmarksByHand[h];
+      const handJoints = joints[h];
+      const handBones = bones[h];
+      const ring = rings[h];
+
+      if (!landmarks || !showSkeleton) {
+        handJoints.forEach((mesh) => (mesh.visible = false));
+        handBones.forEach((mesh) => (mesh.visible = false));
+      } else {
+        const worldPts = landmarks.map(
+          (lm) => new THREE.Vector3(toWorldX(lm.x), toWorldY(lm.y), lm.z)
+        );
+        handJoints.forEach((mesh, j) => {
+          const p = worldPts[j];
+          if (!p) {
+            mesh.visible = false;
+            return;
+          }
+          mesh.visible = true;
+          mesh.position.copy(p);
+          mesh.scale.setScalar(j === 0 ? 9 : 6);
+        });
+        handBones.forEach((mesh, b) => {
+          const [ai, bi] = HAND_CONNECTIONS[b];
+          const a = worldPts[ai];
+          const bp = worldPts[bi];
+          if (!a || !bp) {
+            mesh.visible = false;
+            return;
+          }
+          mesh.visible = true;
+          const dir = new THREE.Vector3().subVectors(bp, a);
+          const length = dir.length() || 0.001;
+          const mid = new THREE.Vector3().addVectors(a, bp).multiplyScalar(0.5);
+          mesh.position.copy(mid);
+          const r = BONE_RADII[b];
+          mesh.scale.set(r, length, r);
+          mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
+        });
       }
-      ctx.restore();
+
+      const palm = palmPoints[h];
+      if (!landmarks || !palm) {
+        ring.visible = false;
+      } else {
+        ring.visible = true;
+        ring.position.set(toWorldX(palm.x), toWorldY(palm.y), -1);
+        ring.scale.set(pushRadius, pushRadius, 1);
+      }
     }
 
-    ctx.save();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-    for (const hand of handsRef.current.points) {
-      ctx.beginPath();
-      ctx.arc(hand.x, hand.y, pushRadius, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    for (const obj of objectsRef.current) {
-      const glow = ctx.createRadialGradient(
-        obj.x,
-        obj.y,
-        0,
-        obj.x,
-        obj.y,
-        obj.radius * 2.4
-      );
-      glow.addColorStop(0, `hsla(${obj.hue}, 90%, 65%, 0.85)`);
-      glow.addColorStop(1, `hsla(${obj.hue}, 90%, 55%, 0)`);
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(obj.x, obj.y, obj.radius * 2.4, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = `hsla(${obj.hue}, 85%, 72%, 1)`;
-      ctx.beginPath();
-      ctx.arc(obj.x, obj.y, obj.radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
+    renderer.render(scene, camera);
   }, []);
 
   const loop = useCallback(
@@ -221,11 +397,17 @@ const HandPush = () => {
       const mirrorOn = mirrorRef.current;
 
       const points: Point[] = [];
-      const landmarksOnScreen: Point[][] = [];
+      const landmarksOnScreen: Landmark3D[][] = [];
       for (const landmarks of result.landmarks) {
         const mapped = landmarks.map((lm) => ({
           x: (mirrorOn ? 1 - lm.x : lm.x) * width,
           y: lm.y * height,
+          // MediaPipe's z is depth relative to the wrist, in roughly the
+          // same normalized scale as x/y, with smaller (more negative)
+          // meaning closer to the camera. Flip and scale it into
+          // screen-ish units so a hand reaching toward the lens visibly
+          // pops toward the viewer in the 3D scene.
+          z: -lm.z * width * 0.5,
         }));
         landmarksOnScreen.push(mapped);
         let sx = 0;
@@ -246,6 +428,8 @@ const HandPush = () => {
       const pushForce = (pushStrengthRef.current / 100) * 16;
       const springK = 0.36;
       const damping = 0.9;
+      const orbitRadius = Math.min(width, height) * ORBIT_RADIUS_FACTOR;
+      const t = time / 1000;
 
       for (const obj of objectsRef.current) {
         let fx = 0;
@@ -269,8 +453,17 @@ const HandPush = () => {
             fy += (dy / dist) * force;
           }
         }
-        fx += (obj.homeX - obj.x) * springK;
-        fy += (obj.homeY - obj.y) * springK;
+
+        // Idle wander: rather than spring to a fixed point, spring toward a
+        // slowly orbiting target near home so the balls stay gently in
+        // motion even when no hand is around.
+        const targetX =
+          obj.homeX + Math.cos(t * obj.orbitSpeed + obj.phase) * orbitRadius;
+        const targetY =
+          obj.homeY +
+          Math.sin(t * obj.orbitSpeed * 0.8 + obj.phase) * orbitRadius;
+        fx += (targetX - obj.x) * springK;
+        fy += (targetY - obj.y) * springK;
 
         const dampFactor = Math.pow(damping, dt);
         obj.vx = (obj.vx + fx * dt) * dampFactor;
@@ -279,9 +472,9 @@ const HandPush = () => {
         obj.y += obj.vy * dt;
       }
 
-      draw(width, height);
+      renderScene(width, height);
     },
-    [draw]
+    [renderScene]
   );
 
   const ensureLandmarker = useCallback(async () => {
@@ -298,13 +491,13 @@ const HandPush = () => {
       landmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: { ...baseOptions, delegate: "GPU" },
         runningMode: "VIDEO",
-        numHands: 2,
+        numHands: MAX_HANDS,
       });
     } catch {
       landmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: { ...baseOptions, delegate: "CPU" },
         runningMode: "VIDEO",
-        numHands: 2,
+        numHands: MAX_HANDS,
       });
     }
     landmarkerRef.current = landmarker;
@@ -422,8 +615,9 @@ const HandPush = () => {
         <div className="absolute top-4 left-4 z-10 w-72 space-y-3 rounded-xl bg-black/60 p-4 text-sm text-white backdrop-blur">
           <h2 className="text-lg font-semibold">Hand Push</h2>
           <p className="text-white/70">
-            Real hand tracking pushes these objects out of the way. Take your
-            hand back and they spring back to their resting spots.
+            Real hand tracking, rendered as a 3D mesh, pushes these balls out
+            of the way. They drift gently on their own and spring back to
+            their resting spots once your hand is gone.
           </p>
 
           {!isRunning ? (
@@ -479,7 +673,7 @@ const HandPush = () => {
               checked={showSkeleton}
               onChange={(e) => setShowSkeleton(e.target.checked)}
             />
-            Show hand skeleton
+            Show hand mesh
           </label>
 
           <button
