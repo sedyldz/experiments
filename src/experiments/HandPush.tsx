@@ -32,33 +32,41 @@ const PUSH_FORCE_SCALE = 26000;
 // energy into whatever it's dropped on top of.
 const MAX_DRAG_SPEED = 4000;
 
-// Skeleton connections between MediaPipe's 21 hand landmarks, used to build
-// the bone cylinders of the 3D hand mesh.
-const HAND_CONNECTIONS: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4],
-  [0, 5], [5, 6], [6, 7], [7, 8],
-  [5, 9], [9, 10], [10, 11], [11, 12],
-  [9, 13], [13, 14], [14, 15], [15, 16],
-  [13, 17], [17, 18], [18, 19], [19, 20],
-  [0, 17],
-];
-
-// Rough per-bone thickness (wider near the palm, tapering toward fingertips),
-// same order/length as HAND_CONNECTIONS.
-const BONE_RADII = [
-  7, 6, 5, 4,
-  8, 6, 5, 4,
-  7, 6, 5, 4,
-  7, 6, 5, 4,
-  6, 5, 4, 3,
-  8,
-];
-
 // A stable, low-jitter stand-in for "palm center": the wrist plus the four
 // finger MCP knuckles, averaged.
 const PALM_LANDMARKS = [0, 5, 9, 13, 17];
 
-const UP = new THREE.Vector3(0, 1, 0);
+// Which 21 landmarks form each of the 5 fingers, always starting at the
+// wrist so all five tubes converge there like a real hand.
+const FINGER_LANDMARKS: number[][] = [
+  [0, 1, 2, 3, 4], // thumb
+  [0, 5, 6, 7, 8], // index
+  [0, 9, 10, 11, 12], // middle
+  [0, 13, 14, 15, 16], // ring
+  [0, 17, 18, 19, 20], // pinky
+];
+// Tube radius at each of those landmarks (wide at the wrist, tapering to
+// the fingertip), same order/length as FINGER_LANDMARKS.
+const FINGER_RADII: number[][] = [
+  [10, 9, 7, 5, 3],
+  [10, 8, 6, 4.5, 3],
+  [10, 8, 6, 4.5, 3],
+  [10, 7, 5.5, 4, 2.8],
+  [9, 6, 4.5, 3.5, 2.5],
+];
+// Wrist + all five knuckles, in hand order (thumb side to pinky side): a
+// flat fan filling the palm between the finger tubes.
+const PALM_PATCH_LANDMARKS = [0, 1, 5, 9, 13, 17];
+const PALM_PATCH_INDICES = new Uint16Array([0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5]);
+
+const FINGER_TUBULAR_SEGMENTS = 20;
+const FOREARM_TUBULAR_SEGMENTS = 8;
+const TUBE_RADIAL_SEGMENTS = 10;
+// How far beyond the last real landmark a finger's tube tapers to a point,
+// and the (near-zero) radius it tapers to — gives a rounded fingertip
+// instead of a flat cut-off cylinder end.
+const TIP_EXTENSION = 0.4;
+const TIP_RADIUS = 1.2;
 
 // The hand-tracking pipeline works in screen-pixel space (origin top-left,
 // y down); the physics/render world is centered on screen with y up. These
@@ -68,6 +76,101 @@ function toWorldX(x: number, width: number) {
 }
 function toWorldY(y: number, height: number) {
   return height / 2 - y;
+}
+
+function buildTubeIndices(tubularSegments: number, radialSegments: number): Uint16Array {
+  const indices: number[] = [];
+  for (let i = 0; i < tubularSegments; i++) {
+    for (let j = 0; j < radialSegments; j++) {
+      const a = i * radialSegments + j;
+      const b = i * radialSegments + ((j + 1) % radialSegments);
+      const c = (i + 1) * radialSegments + ((j + 1) % radialSegments);
+      const d = (i + 1) * radialSegments + j;
+      indices.push(a, b, d, b, c, d);
+    }
+  }
+  return new Uint16Array(indices);
+}
+
+function createTubeGeometry(tubularSegments: number, radialSegments: number): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  const vertexCount = (tubularSegments + 1) * radialSegments;
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3));
+  geometry.setIndex(new THREE.BufferAttribute(buildTubeIndices(tubularSegments, radialSegments), 1));
+  return geometry;
+}
+
+// Rebuilds a tube's vertex positions in place from a chain of control points
+// and per-point radii (same length), using Frenet frames so the tube twists
+// smoothly along the curve instead of each ring facing a fixed axis.
+function updateTubeGeometry(
+  geometry: THREE.BufferGeometry,
+  points: THREE.Vector3[],
+  radii: number[],
+  tubularSegments: number,
+  radialSegments: number
+) {
+  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const frames = curve.computeFrenetFrames(tubularSegments, false);
+  const posAttr = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const arr = posAttr.array as Float32Array;
+  const segCount = points.length - 1;
+
+  for (let i = 0; i <= tubularSegments; i++) {
+    const u = i / tubularSegments;
+    const center = curve.getPointAt(u);
+    // Radius interpolated piecewise-linearly over the control points; not
+    // exact arc-length matching, but close enough for this stylized mesh.
+    const scaled = u * segCount;
+    const segIdx = Math.min(Math.floor(scaled), segCount - 1);
+    const localT = scaled - segIdx;
+    const radius = radii[segIdx] + (radii[segIdx + 1] - radii[segIdx]) * localT;
+    const normal = frames.normals[i];
+    const binormal = frames.binormals[i];
+
+    for (let j = 0; j < radialSegments; j++) {
+      const angle = (j / radialSegments) * Math.PI * 2;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const idx = (i * radialSegments + j) * 3;
+      arr[idx] = center.x + (normal.x * cos + binormal.x * sin) * radius;
+      arr[idx + 1] = center.y + (normal.y * cos + binormal.y * sin) * radius;
+      arr[idx + 2] = center.z + (normal.z * cos + binormal.z * sin) * radius;
+    }
+  }
+  posAttr.needsUpdate = true;
+  geometry.computeVertexNormals();
+}
+
+function createPalmGeometry(): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  const vertexCount = PALM_PATCH_LANDMARKS.length;
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(vertexCount * 3), 3));
+  geometry.setIndex(new THREE.BufferAttribute(PALM_PATCH_INDICES, 1));
+  return geometry;
+}
+
+function updatePalmGeometry(geometry: THREE.BufferGeometry, points: THREE.Vector3[]) {
+  const posAttr = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const arr = posAttr.array as Float32Array;
+  points.forEach((p, i) => {
+    arr[i * 3] = p.x;
+    arr[i * 3 + 1] = p.y;
+    arr[i * 3 + 2] = p.z;
+  });
+  posAttr.needsUpdate = true;
+  geometry.computeVertexNormals();
+}
+
+// Extrapolates one extra point past the last landmark so a finger's tube
+// tapers to a rounded point instead of ending in a flat cut-off cylinder.
+function withTaperedTip(points: THREE.Vector3[]): THREE.Vector3[] {
+  const last = points[points.length - 1];
+  const prev = points[points.length - 2];
+  const dir = new THREE.Vector3().subVectors(last, prev);
+  return [...points, last.clone().addScaledVector(dir, TIP_EXTENSION)];
 }
 
 interface Point {
@@ -90,6 +193,12 @@ interface Ball {
 interface PinchState {
   pinching: boolean;
   grabbedIndex: number | null;
+}
+
+interface HandMeshPart {
+  geometry: THREE.BufferGeometry;
+  wireMesh: THREE.Mesh;
+  fillMesh: THREE.Mesh;
 }
 
 type Status = "idle" | "loading-model" | "starting-camera" | "running" | "error";
@@ -118,8 +227,9 @@ const HandPush = () => {
   const ballsRef = useRef<Ball[]>([]);
   const initializedLayoutRef = useRef(false);
 
-  const jointsPoolRef = useRef<THREE.Mesh[][]>([]);
-  const bonesPoolRef = useRef<THREE.Mesh[][]>([]);
+  const fingerPartsRef = useRef<HandMeshPart[][]>([]); // [hand][finger]
+  const palmPartsRef = useRef<HandMeshPart[]>([]); // [hand]
+  const forearmPartsRef = useRef<HandMeshPart[]>([]); // [hand]
   const ringPoolRef = useRef<THREE.Mesh[]>([]);
   const pinchIndicatorPoolRef = useRef<THREE.Mesh[]>([]);
 
@@ -269,51 +379,64 @@ const HandPush = () => {
     }
     ballsRef.current = balls;
 
-    const jointGeometry = new THREE.SphereGeometry(1, 12, 12);
-    const jointColor = new THREE.Color().setHSL(0.56, 0.85, 0.65);
-    const jointMaterial = new THREE.MeshStandardMaterial({
-      color: jointColor,
-      emissive: jointColor,
-      emissiveIntensity: 1,
-      roughness: 0.3,
-      metalness: 0.2,
+    // The hand is a continuous mesh (finger tubes + a palm patch + a
+    // forearm stub) rather than discrete joints/bones: a bright wireframe
+    // plus a faint solid fill sharing the same (per-frame-updated) geometry,
+    // for a look closer to a real hand-tracking mesh render.
+    const handWireColor = new THREE.Color(0xcdeeff);
+    const handWireMaterial = new THREE.MeshBasicMaterial({
+      color: handWireColor,
+      wireframe: true,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
     });
-    const boneGeometry = new THREE.CylinderGeometry(1, 1, 1, 8);
-    const boneMaterial = new THREE.MeshStandardMaterial({
-      color: jointColor,
-      emissive: jointColor,
-      emissiveIntensity: 0.6,
-      roughness: 0.4,
+    const handFillMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1c3a52,
+      emissive: handWireColor,
+      emissiveIntensity: 0.15,
+      transparent: true,
+      opacity: 0.15,
+      roughness: 0.6,
       metalness: 0.1,
-      transparent: true,
-      opacity: 0.75,
+      side: THREE.DoubleSide,
     });
 
-    const joints: THREE.Mesh[][] = [];
-    const bones: THREE.Mesh[][] = [];
+    const fingerParts: HandMeshPart[][] = [];
+    const palmParts: HandMeshPart[] = [];
+    const forearmParts: HandMeshPart[] = [];
     for (let h = 0; h < MAX_HANDS; h++) {
-      const handJoints: THREE.Mesh[] = [];
-      for (let j = 0; j < 21; j++) {
-        const mesh = new THREE.Mesh(jointGeometry, jointMaterial);
-        mesh.visible = false;
-        scene.add(mesh);
-        handJoints.push(mesh);
+      const handFingers: HandMeshPart[] = [];
+      for (let f = 0; f < FINGER_LANDMARKS.length; f++) {
+        const geometry = createTubeGeometry(FINGER_TUBULAR_SEGMENTS, TUBE_RADIAL_SEGMENTS);
+        const wireMesh = new THREE.Mesh(geometry, handWireMaterial);
+        const fillMesh = new THREE.Mesh(geometry, handFillMaterial);
+        wireMesh.visible = false;
+        fillMesh.visible = false;
+        scene.add(wireMesh, fillMesh);
+        handFingers.push({ geometry, wireMesh, fillMesh });
       }
-      joints.push(handJoints);
+      fingerParts.push(handFingers);
 
-      const handBones: THREE.Mesh[] = [];
-      for (let b = 0; b < HAND_CONNECTIONS.length; b++) {
-        const mesh = new THREE.Mesh(boneGeometry, boneMaterial);
-        mesh.visible = false;
-        scene.add(mesh);
-        handBones.push(mesh);
-      }
-      bones.push(handBones);
+      const palmGeometry = createPalmGeometry();
+      const palmWire = new THREE.Mesh(palmGeometry, handWireMaterial);
+      const palmFill = new THREE.Mesh(palmGeometry, handFillMaterial);
+      palmWire.visible = false;
+      palmFill.visible = false;
+      scene.add(palmWire, palmFill);
+      palmParts.push({ geometry: palmGeometry, wireMesh: palmWire, fillMesh: palmFill });
+
+      const forearmGeometry = createTubeGeometry(FOREARM_TUBULAR_SEGMENTS, TUBE_RADIAL_SEGMENTS);
+      const forearmWire = new THREE.Mesh(forearmGeometry, handWireMaterial);
+      const forearmFill = new THREE.Mesh(forearmGeometry, handFillMaterial);
+      forearmWire.visible = false;
+      forearmFill.visible = false;
+      scene.add(forearmWire, forearmFill);
+      forearmParts.push({ geometry: forearmGeometry, wireMesh: forearmWire, fillMesh: forearmFill });
     }
-    jointsPoolRef.current = joints;
-    bonesPoolRef.current = bones;
+    fingerPartsRef.current = fingerParts;
+    palmPartsRef.current = palmParts;
+    forearmPartsRef.current = forearmParts;
 
     const ringGeometry = new THREE.RingGeometry(0.96, 1, 64);
     const ringMaterial = new THREE.MeshBasicMaterial({
@@ -353,15 +476,16 @@ const HandPush = () => {
     return () => {
       renderer.dispose();
       ballGeometry.dispose();
-      jointGeometry.dispose();
-      boneGeometry.dispose();
       ringGeometry.dispose();
       pinchGeometry.dispose();
       balls.forEach((ball) => (ball.mesh.material as THREE.Material).dispose());
-      jointMaterial.dispose();
-      boneMaterial.dispose();
+      handWireMaterial.dispose();
+      handFillMaterial.dispose();
       ringMaterial.dispose();
       pinchMaterial.dispose();
+      fingerParts.forEach((hand) => hand.forEach((part) => part.geometry.dispose()));
+      palmParts.forEach((part) => part.geometry.dispose());
+      forearmParts.forEach((part) => part.geometry.dispose());
     };
   }, []);
 
@@ -431,8 +555,9 @@ const HandPush = () => {
       material.emissiveIntensity = grabbed ? 1.7 : 0.9;
     });
 
-    const joints = jointsPoolRef.current;
-    const bones = bonesPoolRef.current;
+    const fingerParts = fingerPartsRef.current;
+    const palmParts = palmPartsRef.current;
+    const forearmParts = forearmPartsRef.current;
     const rings = ringPoolRef.current;
     const pinchIndicators = pinchIndicatorPoolRef.current;
     const landmarksByHand = handsRef.current.landmarks;
@@ -441,47 +566,64 @@ const HandPush = () => {
     const pushRadius = Math.min(width, height) * 0.24;
     const showSkeleton = showSkeletonRef.current;
 
+    const setPartVisible = (part: HandMeshPart, visible: boolean) => {
+      part.wireMesh.visible = visible;
+      part.fillMesh.visible = visible;
+    };
+
     for (let h = 0; h < MAX_HANDS; h++) {
       const landmarks = landmarksByHand[h];
-      const handJoints = joints[h];
-      const handBones = bones[h];
+      const handFingers = fingerParts[h];
+      const palmPart = palmParts[h];
+      const forearmPart = forearmParts[h];
       const ring = rings[h];
 
       if (!landmarks || !showSkeleton) {
-        handJoints.forEach((mesh) => (mesh.visible = false));
-        handBones.forEach((mesh) => (mesh.visible = false));
+        handFingers.forEach((part) => setPartVisible(part, false));
+        setPartVisible(palmPart, false);
+        setPartVisible(forearmPart, false);
       } else {
         const worldPts = landmarks.map(
           (lm) =>
             new THREE.Vector3(toWorldX(lm.x, width), toWorldY(lm.y, height), lm.z)
         );
-        handJoints.forEach((mesh, j) => {
-          const p = worldPts[j];
-          if (!p) {
-            mesh.visible = false;
-            return;
-          }
-          mesh.visible = true;
-          mesh.position.copy(p);
-          mesh.scale.setScalar(j === 0 ? 9 : 6);
+
+        FINGER_LANDMARKS.forEach((indices, f) => {
+          const controlPoints = withTaperedTip(indices.map((idx) => worldPts[idx]));
+          const radii = [...FINGER_RADII[f], TIP_RADIUS];
+          updateTubeGeometry(
+            handFingers[f].geometry,
+            controlPoints,
+            radii,
+            FINGER_TUBULAR_SEGMENTS,
+            TUBE_RADIAL_SEGMENTS
+          );
+          setPartVisible(handFingers[f], true);
         });
-        handBones.forEach((mesh, b) => {
-          const [ai, bi] = HAND_CONNECTIONS[b];
-          const a = worldPts[ai];
-          const bp = worldPts[bi];
-          if (!a || !bp) {
-            mesh.visible = false;
-            return;
-          }
-          mesh.visible = true;
-          const dir = new THREE.Vector3().subVectors(bp, a);
-          const length = dir.length() || 0.001;
-          const mid = new THREE.Vector3().addVectors(a, bp).multiplyScalar(0.5);
-          mesh.position.copy(mid);
-          const r = BONE_RADII[b];
-          mesh.scale.set(r, length, r);
-          mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
-        });
+
+        updatePalmGeometry(
+          palmPart.geometry,
+          PALM_PATCH_LANDMARKS.map((idx) => worldPts[idx])
+        );
+        setPartVisible(palmPart, true);
+
+        // A short stub extending from the wrist away from the fingers, so
+        // the hand doesn't look like it ends abruptly at the wrist.
+        const wrist = worldPts[0];
+        const knuckleCenter = new THREE.Vector3();
+        for (const idx of PALM_LANDMARKS) knuckleCenter.add(worldPts[idx]);
+        knuckleCenter.divideScalar(PALM_LANDMARKS.length);
+        const handSize = wrist.distanceTo(knuckleCenter) || 1;
+        const forearmDir = new THREE.Vector3().subVectors(wrist, knuckleCenter).normalize();
+        const forearmEnd = wrist.clone().addScaledVector(forearmDir, handSize * 2.4);
+        updateTubeGeometry(
+          forearmPart.geometry,
+          [wrist, forearmEnd],
+          [10, 13],
+          FOREARM_TUBULAR_SEGMENTS,
+          TUBE_RADIAL_SEGMENTS
+        );
+        setPartVisible(forearmPart, true);
       }
 
       const palm = palmPoints[h];
