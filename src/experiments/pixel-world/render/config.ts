@@ -1,0 +1,46 @@
+// Tuning for the pixel pipeline and the isometric camera.
+
+export const renderConfig = {
+  /**
+   * The low-res buffer height the default zoom aims for. The initial integer
+   * upscale factor is picked so the buffer comes out close to this. 240 gives
+   * about 320x240 on a 4:3 window.
+   */
+  targetHeight: 240,
+  /** Integer upscale bounds. Zooming steps through these. */
+  minPixelScale: 1,
+  maxPixelScale: 12,
+
+  /** Low-res pixels per world meter. This sets the world's on-screen size. */
+  pixelsPerMeter: 16,
+
+  /** How far behind the target the ortho camera sits (only affects clipping). */
+  cameraDistance: 60,
+  near: 1,
+  far: 140,
+  /** Duration of a 90 degree Q/E rotation tween, in seconds. */
+  rotateDuration: 0.28,
+
+  outline: {
+    /** Depth jump (in meters, along the view axis) that counts as a silhouette. */
+    depthThreshold: 0.35,
+    /** 1 - dot(n1, n2) above which a crease is drawn. */
+    normalThreshold: 0.35,
+    /** How strongly silhouette pixels are pulled toward `palette.ink`. */
+    silhouetteStrength: 0.85,
+    /** Multiplier applied to crease pixels (1 = invisible). */
+    creaseDarken: 0.72,
+  },
+
+  dither: {
+    /** Amplitude of the 4x4 Bayer offset added before quantization (0-1 sRGB). */
+    strength: 0.045,
+    /** Multiplier for the sparse halftone dots (1 = no dots). */
+    halftoneDarken: 0.74,
+  },
+
+  shadowMapSize: 1024,
+} as const;
+
+/** Isometric pitch: the camera looks down at atan(1/sqrt(2)), about 35.26 degrees. */
+export const ISO_PITCH = Math.atan(1 / Math.SQRT2);

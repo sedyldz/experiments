@@ -35,5 +35,14 @@ export const experiments: Experiment[] = [
     path: "/experiments/hand-push",
     githubUrl: "https://github.com/yourusername/hand-push",
   },
+  {
+    id: "pixel-world",
+    title: "tio.ist Pixel World",
+    description:
+      "An isometric, pixel-art dollhouse diorama of the tio.ist coworking space in Kadıköy, rendered through a low-res pixel pipeline with outlines, dithering and a hand-tuned palette.",
+    thumbnail: "/thumbnails/pixel-world.jpg",
+    path: "/experiments/pixel-world",
+    githubUrl: "https://github.com/sedyldz/experiments",
+  },
   // Add more experiments here as you create them
 ];
