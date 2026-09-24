@@ -4,7 +4,8 @@ import { renderConfig } from "./config";
 import { layout } from "../world/layout";
 
 /**
- * A warm key light from the front-left windows plus a cool fill. The key
+ * A warm key light from the front-left windows, a sky/ground ambient, and a
+ * cool shadowless fill. The key
  * casts hard shadow-map shadows, and at low res those read as pixel-art
  * shadows.
  */
@@ -41,6 +42,9 @@ export function Lighting() {
         color="#fff4e2"
         castShadow
       />
+      {/* Shadowless fill from the opposite side, so walls facing away from the
+          key stay cream and not khaki, like the evenly lit references. */}
+      <directionalLight position={[10, 8, -8]} intensity={1.8} color="#eef2ff" />
     </>
   );
 }

@@ -34,7 +34,8 @@ const clampScale = (s: number) =>
   Math.max(renderConfig.minPixelScale, Math.min(renderConfig.maxPixelScale, s));
 
 export const useViewStore = create<ViewState>((set) => ({
-  rotationStep: 0,
+  // Start looking in from the front-left corner, like the reference cutaway.
+  rotationStep: -1,
   pixelScale: null,
   target: { x: 0, z: 0 },
   outline: true,

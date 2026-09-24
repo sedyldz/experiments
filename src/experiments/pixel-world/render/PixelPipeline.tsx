@@ -274,7 +274,10 @@ export function PixelPipeline() {
     const { swapped, hidden } = res;
     scene.traverseVisible((obj) => {
       const flags = obj.userData.pixel as PixelUserData | undefined;
-      if (flags?.skipNormal) {
+      // Lines, points and sprites can't take the normal material, so they
+      // sit out the normal pass along with anything flagged skipNormal.
+      const other = obj as THREE.Line & THREE.Points & THREE.Sprite;
+      if (flags?.skipNormal || other.isLine || other.isPoints || other.isSprite) {
         hidden.push(obj);
         return;
       }

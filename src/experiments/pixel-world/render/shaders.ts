@@ -170,26 +170,32 @@ export const compositeFragment = /* glsl */ `
 
     if (ditherOn && ditherMe) {
       // Ordered dither smooths any lighting gradient into shade steps, and a
-      // sparse halftone dot lattice (1 pixel in 16, one shade darker) gives
+      // sparse halftone dot lattice (one shade darker) gives
       // flat walls and floor a printed texture.
       float b = bayer4(px);
       color += (b - 0.5) * ditherStrength;
-      if (b < 0.0625) color *= halftoneDarken;
+      // Staggered lattice: 1 pixel in 32.
+      vec2 cell = floor(px);
+      bool isDot = mod(cell.y, 4.0) < 0.5 && mod(cell.x + floor(cell.y / 4.0) * 4.0, 8.0) < 0.5;
+      if (isDot) color *= halftoneDarken;
     }
 
-    if (outlineOn && !isBackground) {
-      // Silhouette: a neighbor lies well behind this pixel, so this pixel is
-      // the object's outermost pixel. The outline sits on the object side.
+    if (outlineOn) {
+      // Silhouette: a neighbor sits well in front of this pixel, so this
+      // pixel is just outside that object's edge and becomes outline. The
+      // line goes outside the object, like hand-drawn pixel art, so a
+      // 1px-thin steel leg keeps its color and gets a dark contour on both
+      // sides.
       float dl = depthAt(px + vec2(-1.0, 0.0));
       float dr = depthAt(px + vec2(1.0, 0.0));
       float dd = depthAt(px + vec2(0.0, -1.0));
       float du = depthAt(px + vec2(0.0, 1.0));
-      float maxBehind = max(max(dl - d, dr - d), max(dd - d, du - d));
+      float maxInFront = max(max(d - dl, d - dr), max(d - dd, d - du));
 
-      if (maxBehind > depthThreshold) {
+      if (maxInFront > depthThreshold) {
         color = mix(color, inkColor, silhouetteStrength);
         rampId = 0;
-      } else {
+      } else if (!isBackground) {
         vec3 n = normalSample.xyz * 2.0 - 1.0;
         float crease = max(
           max(creaseAgainst(n, d, px + vec2(-1.0, 0.0)), creaseAgainst(n, d, px + vec2(1.0, 0.0))),

@@ -19,8 +19,11 @@ src/experiments/pixel-world/
   world/
     layout.ts          all dimensions of the space, in meters (placeholder until
                        a real floor plan arrives)
+    Space.tsx          builds the shell + mezzanine and places every kit piece
+    kit/               reusable pieces: furniture.tsx, plants.tsx (procedural,
+                       seeded, merged foliage), structure.tsx (pipe, railing,
+                       curtain, stairs, doorway, facade, lamps)
     worldStore.ts      serializable world state + actions (phase 4+)
-    kit/               reusable furniture components (phase 3)
   pathfinding/         grid generation from layout, A* across floors (phase 4)
   avatars/             sprite generator, avatar store/actions, billboards (phase 5)
   ui/                  view store (camera, toggles) + HUD / sidebar
@@ -36,8 +39,8 @@ src/experiments/pixel-world/
    palette ramp id and a "dither me" bit, so dithering can be limited to walls
    and floor.
 3. **Composite pass (low res).**
-   - A depth discontinuity gives a 1px dark outline on the near side of the
-     edge.
+   - A depth discontinuity gives a 1px dark outline just outside the nearer
+     object, like hand-drawn pixel art. Thin steel legs keep their blue.
    - A normal crease gives a softer 1px darkening.
    - A 4x4 Bayer dither plus a sparse halftone dot lattice apply to flagged
      surfaces. Both can be toggled.
@@ -86,9 +89,11 @@ actions get broadcast.
 ## Phases
 
 1. Scaffold + pixel pipeline: grey-box room, camera, rotation and zoom,
-   low-res, outline and quantize passes. **(this phase)**
+   low-res, outline and quantize passes. **(done)**
 2. Space blockout from `layout.ts`: ground floor, mezzanine, stairs, palette.
-3. Furniture kit + dressing to match `inside2.jpeg`.
+   **(done)**
+3. Furniture kit + dressing to match the references in `/reference`.
+   **(done, iterating)**
 4. Walkable grid + A* + debug overlay.
 5. Avatars: sprites, drag placement, click-to-move, sitting.
 6. Autonomy, persistence, day/night, pendant glow, polish.

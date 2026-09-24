@@ -20,8 +20,8 @@ function Toggle({
       onClick={onClick}
       className={`px-2 py-1 border-2 text-xs uppercase tracking-wider ${
         on
-          ? "bg-[#e6d7b8] text-[#14151f] border-[#14151f]"
-          : "bg-transparent text-[#e6d7b8] border-[#e6d7b8]/50"
+          ? "bg-[#1c2130] text-[#fbf7e9] border-[#1c2130]"
+          : "bg-[#fbf7e9] text-[#1c2130] border-[#1c2130]/40"
       }`}
     >
       {label}
@@ -34,7 +34,7 @@ export function Hud() {
   const s = useViewStore();
   return (
     <div
-      className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 text-[#e6d7b8]"
+      className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 text-[#1c2130]"
       style={pixelFont}
     >
       <div className="pointer-events-auto flex items-center gap-3">
@@ -44,14 +44,17 @@ export function Hud() {
         <span className="text-sm font-bold tracking-widest">
           TIO.IST PIXEL WORLD
         </span>
-        <span className="text-xs opacity-70">phase 1 · pipeline</span>
+        <span className="text-xs opacity-70">phase 3 · furniture + dressing</span>
       </div>
 
       <div className="pointer-events-auto flex flex-wrap items-end gap-2">
         <Toggle label="outline" on={s.outline} onClick={() => s.toggle("outline")} />
         <Toggle label="dither" on={s.dither} onClick={() => s.toggle("dither")} />
         <Toggle label="palette" on={s.quantize} onClick={() => s.toggle("quantize")} />
-        <span className="mx-2 h-5 w-px bg-[#e6d7b8]/40" />
+        <span className="mx-2 h-5 w-px bg-current opacity-40" />
+        <Toggle label="ground" on={s.floors.ground} onClick={() => s.toggleFloor("ground")} />
+        <Toggle label="mezzanine" on={s.floors.mezzanine} onClick={() => s.toggleFloor("mezzanine")} />
+        <span className="mx-2 h-5 w-px bg-current opacity-40" />
         <Toggle label="⟲ Q" on={false} onClick={() => s.rotate(-1)} />
         <Toggle label="E ⟳" on={false} onClick={() => s.rotate(1)} />
         <Toggle label="−" on={false} onClick={() => s.zoom(-1)} />

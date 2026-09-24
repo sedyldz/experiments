@@ -55,13 +55,14 @@ export function IsoCameraRig() {
 
     const d = renderConfig.cameraDistance;
     const cp = Math.cos(ISO_PITCH);
+    const fy = renderConfig.focusHeight;
     camera.position.set(
       target.x + Math.sin(yaw.current) * cp * d,
-      Math.sin(ISO_PITCH) * d,
+      fy + Math.sin(ISO_PITCH) * d,
       target.z + Math.cos(yaw.current) * cp * d,
     );
     camera.up.set(0, 1, 0);
-    camera.lookAt(target.x, 0, target.z);
+    camera.lookAt(target.x, fy, target.z);
 
     const unitsPerScreenPx = 1 / (pixelScale * renderConfig.pixelsPerMeter);
     const halfW = (size.width / 2) * unitsPerScreenPx;

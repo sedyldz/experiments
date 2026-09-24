@@ -4,7 +4,7 @@ import { IsoCameraRig } from "./render/IsoCameraRig";
 import { Lighting } from "./render/Lighting";
 import { useCameraControls } from "./render/useCameraControls";
 import { renderConfig } from "./render/config";
-import { GreyboxRoom } from "./world/GreyboxRoom";
+import { Space } from "./world/Space";
 import { Hud } from "./ui/Hud";
 import { base } from "./palette";
 
@@ -33,7 +33,7 @@ export default function PixelWorld() {
         <IsoCameraRig />
         <Controls />
         <Lighting />
-        <GreyboxRoom />
+        <Space />
         <PixelPipeline />
       </Canvas>
       <Hud />

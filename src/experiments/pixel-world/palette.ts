@@ -20,31 +20,37 @@ function ramp(colors: Ramp, base: number): RampSet {
 
 export const palette = {
   // Outline + deepest shadow. Also the fallback "void" color.
-  ink: ramp(["#14151f"], 0),
+  ink: ramp(["#1c2130"], 0),
 
-  // Surfaces
-  concrete: ramp(["#4f5561", "#767d88", "#a2a8ae", "#c6c9ca", "#e0e1dd"], 3),
-  cream: ramp(["#7d6c58", "#a9957a", "#cdb999", "#e6d7b8", "#f4ecd6"], 3),
-  oak: ramp(["#5a3620", "#8a582e", "#b98446", "#d9aa68", "#ecc98f"], 2),
-  cobalt: ramp(["#111b4d", "#1c3190", "#2a52c9", "#4f7ce6", "#88aaf2"], 2),
+  // Surfaces (sampled from the reference illustrations in /reference)
+  cream: ramp(["#9c8f78", "#c9bb9c", "#e2d6b6", "#f3ecd3", "#fbf7e9"], 3),
+  wallBlue: ramp(["#6f84a3", "#8fa3c1", "#b1c5de", "#cfdcec", "#e6eef7"], 2),
+  concrete: ramp(["#7a6e62", "#9d8f80", "#bcad9b", "#d3c5b2", "#e6dccd"], 3),
+  oak: ramp(["#5e3a24", "#8a5a3a", "#b68358", "#d19c68", "#e8bf8a"], 2),
+  cobalt: ramp(["#131c3d", "#1f2f66", "#2c4488", "#4560a8", "#7189c8"], 2),
+  charcoal: ramp(["#1f2129", "#33353f", "#4a4d58", "#6b6e7a"], 1),
+  white: ramp(["#a7a9ae", "#cfd0d2", "#e8e7e3", "#f8f7f3"], 2),
 
   // Accents
-  mustard: ramp(["#6e4f10", "#a87c19", "#d8a82a", "#f0cc5c"], 2),
-  navy: ramp(["#0c1028", "#18203f", "#27325c", "#3b4a7a"], 1),
-  terracotta: ramp(["#6b3224", "#a24f33", "#cf7a4f", "#e9a67a"], 2),
-  steelGrey: ramp(["#2b2e36", "#454a55", "#6a707c"], 1),
+  mustard: ramp(["#8a6410", "#d19a14", "#fcc824", "#ffe07a"], 2),
+  navy: ramp(["#1e2436", "#2f3b55", "#3e4a62", "#56627a"], 1),
+  terracotta: ramp(["#6e3a25", "#a85a38", "#c97a52", "#e0a27a"], 2),
+  orange: ramp(["#7a2e13", "#b0461d", "#d9642e", "#f08a50"], 2),
+  tan: ramp(["#9c7048", "#c49464", "#dbb07c"], 1),
+  purple: ramp(["#4e2640", "#7a3f64", "#a05e87"], 1),
+  glass: ramp(["#9fb9d6", "#c3d7ec", "#e3eef8"], 1),
 
   // Plants: lots of greens, from deep shade to backlit leaf
   green: ramp(
-    ["#0f2618", "#173d24", "#1f5a2e", "#2e7a35", "#4c9c3c", "#78bd52", "#a9d97a"],
+    ["#17281f", "#22402f", "#2f5a3c", "#3f7248", "#5a8c58", "#7ea676", "#a9c79a"],
     3,
   ),
 
   // Light sources
-  warmLight: ramp(["#fff3c4", "#fffbe8"], 0),
+  warmLight: ramp(["#ffe9b8", "#fff6dc", "#fffdf4"], 1),
 
   // Page background behind the diorama
-  background: ramp(["#1e2238"], 0),
+  background: ramp(["#f7f9fc"], 0),
 } as const satisfies Record<string, RampSet>;
 
 export type PaletteKey = keyof typeof palette;
