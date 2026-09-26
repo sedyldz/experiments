@@ -66,11 +66,18 @@ export function Hud() {
         <span className="mx-2 h-5 w-px bg-current opacity-40" />
         <Toggle label="⟲ Q" on={false} onClick={() => s.rotate(-1)} />
         <Toggle label="E ⟳" on={false} onClick={() => s.rotate(1)} />
+        <Toggle label="−" on={false} onClick={() => s.zoomBy(1 / 1.25)} />
+        <Toggle label="+" on={false} onClick={() => s.zoomBy(1.25)} />
+        <Toggle label="iso" on={false} onClick={s.resetView} />
+        <span className="mx-2 h-5 w-px bg-current opacity-40" />
+        <span className="text-xs">px</span>
         <Toggle label="−" on={false} onClick={() => s.zoom(-1)} />
-        <span className="w-10 text-center text-xs">×{s.pixelScale ?? "-"}</span>
+        <span className="w-6 text-center text-xs">×{s.pixelScale ?? "-"}</span>
         <Toggle label="+" on={false} onClick={() => s.zoom(1)} />
-        <span className="ml-auto text-[10px] opacity-60">
-          drag to pan · wheel / +− to zoom · Q/E to rotate
+        <span className="ml-auto text-right text-[10px] leading-4 opacity-60">
+          drag: pan · right-drag / shift-drag / arrows: orbit
+          <br />
+          wheel / pinch: zoom · Q/E: quarter turn · R: reset
         </span>
       </div>
     </div>

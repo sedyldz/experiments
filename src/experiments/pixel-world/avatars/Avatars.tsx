@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { layout } from "../world/layout";
+import { ISO_PITCH } from "../render/config";
 import { flat } from "../world/materials";
 import { useViewStore, type FloorId } from "../ui/viewStore";
 import { useGridStore } from "../pathfinding/gridStore";
@@ -443,7 +444,10 @@ function AvatarSprite({ avatar, runtimes, seats }: { avatar: Avatar; runtimes: R
     setFrame(tex, facing, frame);
 
     g.position.set(px, baseY, pz);
-    g.rotation.y = yaw;
+    // Stand upright at the isometric angle; lean back to face the camera when it
+    // looks down more steeply, so sprites don't squash when seen from above
+    const pitch = Math.asin(Math.min(1, -_f.y));
+    g.rotation.set(-Math.max(0, pitch - ISO_PITCH), yaw, 0, "YXZ");
     const top = rt.mode === "sit" ? SPRITE_H - 0.1 : SPRITE_H;
     if (label.current) label.current.position.y = top + 0.12;
     if (bubble.current) {

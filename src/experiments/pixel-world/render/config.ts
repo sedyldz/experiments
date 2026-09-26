@@ -20,8 +20,16 @@ export const renderConfig = {
   cameraDistance: 60,
   near: 1,
   far: 140,
-  /** Duration of a 90 degree Q/E rotation tween, in seconds. */
-  rotateDuration: 0.28,
+  /** How quickly the camera eases toward its goal orientation and zoom (1/s). */
+  cameraEase: 14,
+  /** Free-orbit limits: from a low, almost eye-level view to nearly top-down (radians). */
+  minPitch: 0.12,
+  maxPitch: 1.45,
+  /** Continuous zoom limits, as multiples of pixelsPerMeter. */
+  minZoom: 0.4,
+  maxZoom: 3.5,
+  /** Orbit speed for a drag, in radians per screen pixel. */
+  orbitSpeed: 0.008,
 
   outline: {
     /** Depth jump (in meters, along the view axis) that counts as a silhouette. */

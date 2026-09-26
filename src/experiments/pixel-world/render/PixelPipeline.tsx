@@ -262,7 +262,8 @@ export function PixelPipeline() {
     const view = useViewStore.getState();
     const s = view.pixelScale;
     if (s === null) return;
-    const ppm = renderConfig.pixelsPerMeter;
+    // The rig publishes the eased zoom it used for the view camera this frame
+    const ppm = renderConfig.pixelsPerMeter * ((viewCamera.userData.zoomLevel as number | undefined) ?? 1);
     const { lowW, lowH, renderCamera: cam } = res;
 
     // Pixel-snap the render camera: move it in its own image plane so that

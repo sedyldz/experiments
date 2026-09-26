@@ -1,77 +1,58 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { ISO_PITCH, renderConfig } from "./config";
+import { renderConfig } from "./config";
 import { useViewStore } from "../ui/viewStore";
 
-/** The camera yaw for a quarter-turn count. Step 0 looks from the +X/+Z corner. */
-export const yawForStep = (step: number) => Math.PI / 4 + (step * Math.PI) / 2;
-
-const easeInOut = (t: number) =>
-  t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
 /**
- * Drives R3F's default camera as the true isometric view camera. It is
- * unsnapped and its frustum matches the canvas exactly, so pointer events and
- * raycasts line up with what is on screen. PixelPipeline derives its own
- * pixel-snapped render camera from it.
+ * Drives R3F's default camera as the orthographic view camera. It starts in
+ * the classic isometric view but can orbit freely: it eases toward the
+ * store's goal yaw, pitch and zoom every frame. It is unsnapped and its
+ * frustum matches the canvas exactly, so pointer events and raycasts line up
+ * with what is on screen. PixelPipeline derives its own pixel-snapped render
+ * camera from it.
  */
 export function IsoCameraRig() {
   const camera = useThree((s) => s.camera) as THREE.OrthographicCamera;
   const size = useThree((s) => s.size);
   const initPixelScale = useViewStore((s) => s.initPixelScale);
 
-  const yaw = useRef(yawForStep(useViewStore.getState().rotationStep));
-  const tween = useRef<{ from: number; to: number; t0: number } | null>(null);
+  // The eased orientation and zoom actually in effect
+  const state = useRef<{ yaw: number; pitch: number; zoom: number } | null>(null);
 
   useEffect(() => initPixelScale(size.height), [initPixelScale, size.height]);
 
-  useEffect(
-    () =>
-      useViewStore.subscribe((s, prev) => {
-        if (s.rotationStep === prev.rotationStep) return;
-        tween.current = {
-          from: yaw.current,
-          to: yawForStep(s.rotationStep),
-          t0: performance.now(),
-        };
-      }),
-    [],
-  );
-
-  useFrame(() => {
-    const { pixelScale, target } = useViewStore.getState();
+  useFrame((_, dt) => {
+    const { pixelScale, target, yaw, pitch, zoomLevel } = useViewStore.getState();
     if (pixelScale === null) return;
 
-    const tw = tween.current;
-    if (tw) {
-      const t = Math.min(
-        1,
-        (performance.now() - tw.t0) / 1000 / renderConfig.rotateDuration,
-      );
-      yaw.current = tw.from + (tw.to - tw.from) * easeInOut(t);
-      if (t >= 1) tween.current = null;
-    }
+    const c = (state.current ??= { yaw, pitch, zoom: zoomLevel });
+    const k = 1 - Math.exp(-Math.min(dt, 0.1) * renderConfig.cameraEase);
+    c.yaw += (yaw - c.yaw) * k;
+    c.pitch += (pitch - c.pitch) * k;
+    // Zoom eases in log space so in and out feel the same
+    c.zoom = Math.exp(Math.log(c.zoom) + (Math.log(zoomLevel) - Math.log(c.zoom)) * k);
+    if (Math.abs(c.yaw - yaw) < 1e-4) c.yaw = yaw;
+    if (Math.abs(c.pitch - pitch) < 1e-4) c.pitch = pitch;
+    if (Math.abs(c.zoom - zoomLevel) < 1e-4) c.zoom = zoomLevel;
+    // The pipeline and the pan read the eased zoom from here
+    camera.userData.zoomLevel = c.zoom;
 
     const d = renderConfig.cameraDistance;
-    const cp = Math.cos(ISO_PITCH);
+    const cp = Math.cos(c.pitch);
     const fy = renderConfig.focusHeight;
     camera.position.set(
-      target.x + Math.sin(yaw.current) * cp * d,
-      fy + Math.sin(ISO_PITCH) * d,
-      target.z + Math.cos(yaw.current) * cp * d,
+      target.x + Math.sin(c.yaw) * cp * d,
+      fy + Math.sin(c.pitch) * d,
+      target.z + Math.cos(c.yaw) * cp * d,
     );
     camera.up.set(0, 1, 0);
     camera.lookAt(target.x, fy, target.z);
 
-    const unitsPerScreenPx = 1 / (pixelScale * renderConfig.pixelsPerMeter);
+    const unitsPerScreenPx = 1 / (pixelScale * renderConfig.pixelsPerMeter * c.zoom);
     const halfW = (size.width / 2) * unitsPerScreenPx;
     const halfH = (size.height / 2) * unitsPerScreenPx;
-    if (
-      camera.right !== halfW ||
-      camera.top !== halfH ||
-      camera.near !== renderConfig.near
-    ) {
+    if (camera.right !== halfW || camera.top !== halfH || camera.near !== renderConfig.near) {
       camera.left = -halfW;
       camera.right = halfW;
       camera.top = halfH;
