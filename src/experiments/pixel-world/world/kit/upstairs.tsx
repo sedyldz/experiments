@@ -242,3 +242,24 @@ export function ArmChair({ position, rotation = 0 }: Placed) {
     </group>
   );
 }
+
+/** A three-seat sofa. It faces +Z. */
+export function Sofa({ position, rotation = 0, w = 1.9, color = "navy" as PaletteKey, shade = 3 }: Placed & { w?: number; color?: PaletteKey; shade?: number }) {
+  const m = flat(color, shade);
+  const d = 0.85;
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      <Box size={[w, 0.25, d]} at={[0, 0.2, 0]} m={m} />
+      {[-1, 0, 1].map((i) => (
+        <Box key={i} size={[w / 3 - 0.06, 0.12, d - 0.25]} at={[(i * (w - 0.3)) / 3, 0.38, 0.08]} m={m} />
+      ))}
+      <Box size={[w, 0.45, 0.2]} at={[0, 0.55, -d / 2 + 0.1]} m={m} />
+      {[-1, 1].map((sx) => (
+        <Box key={sx} size={[0.16, 0.5, d]} at={[(sx * (w - 0.16)) / 2, 0.3, 0]} m={m} />
+      ))}
+      {[-1, 1].map((sx) => (
+        <Box key={sx} size={[0.05, 0.08, 0.05]} at={[(sx * (w - 0.2)) / 2, 0.04, 0.3]} m={flat("oak", 1)} shadow={false} />
+      ))}
+    </group>
+  );
+}

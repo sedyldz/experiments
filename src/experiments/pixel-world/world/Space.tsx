@@ -12,18 +12,27 @@ function Placed({ p }: { p: Placement }) {
   return createElement(kit[kind] as ComponentType<typeof props>, props);
 }
 
-/** The deck as rectangles [x0, x1, z0, z1] around the stair opening. */
-function deckMinusHole(): [number, number, number, number][] {
-  const { width } = layout.room;
-  const { zFrom, zTo, hole } = layout.mezzanine;
-  const X0 = -width / 2;
-  const X1 = width / 2;
-  const pieces: [number, number, number, number][] = [];
-  if (hole.z1 < zTo) pieces.push([X0, X1, hole.z1, zTo]);
-  if (hole.z0 > zFrom) pieces.push([X0, X1, zFrom, hole.z0]);
-  if (hole.x0 > X0) pieces.push([X0, hole.x0, hole.z0, hole.z1]);
-  if (hole.x1 < X1) pieces.push([hole.x1, X1, hole.z0, hole.z1]);
-  return pieces;
+type Rect = [number, number, number, number]; // x0, x1, z0, z1
+
+/** The upper floor as rectangles, each with the stair opening cut out. */
+function deckMinusHole(): Rect[] {
+  const { decks, hole } = layout.mezzanine;
+  const out: Rect[] = [];
+  for (const [x0, x1, z0, z1] of decks) {
+    const hx0 = Math.max(x0, hole.x0);
+    const hx1 = Math.min(x1, hole.x1);
+    const hz0 = Math.max(z0, hole.z0);
+    const hz1 = Math.min(z1, hole.z1);
+    if (hx0 >= hx1 || hz0 >= hz1) {
+      out.push([x0, x1, z0, z1]);
+      continue;
+    }
+    if (hz1 < z1) out.push([x0, x1, hz1, z1]);
+    if (hz0 > z0) out.push([x0, x1, z0, hz0]);
+    if (hx0 > x0) out.push([x0, hx0, hz0, hz1]);
+    if (hx1 < x1) out.push([hx1, x1, hz0, hz1]);
+  }
+  return out;
 }
 
 /** The whole tio.ist space: the shell, the mezzanine, and every placement from layout.ts. */

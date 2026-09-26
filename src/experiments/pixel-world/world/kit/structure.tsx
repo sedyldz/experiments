@@ -36,13 +36,16 @@ export function Pipe({ position, height, r = 0.075, elbow, ribs }: { position: V
   );
 }
 
-/** A blue steel railing along X from `from` to `to`, with square posts and three round-ish rails. */
-export function Railing({ from, to, z = 0, y = 0, height = 1.0, rails = [0.38, 0.68] }: { from: number; to: number; z?: number; y?: number; height?: number; rails?: number[] }) {
+/** A blue steel railing from `from` to `to`, with square posts and three round-ish rails. */
+export function Railing({ from, to, z = 0, x = 0, y = 0, height = 1.0, rails = [0.38, 0.68], axis = "x" }: { from: number; to: number; z?: number; x?: number; y?: number; height?: number; rails?: number[]; axis?: "x" | "z" }) {
+  // axis "x" runs from..to along X at depth z. Axis "z" runs from..to along
+  // Z at x.
   const m = flat("cobalt");
   const len = to - from;
   const posts = Math.max(2, Math.round(len / 1.25) + 1);
+  const mid = (from + to) / 2;
   return (
-    <group position={[(from + to) / 2, y, z]}>
+    <group position={axis === "x" ? [mid, y, z] : [x, y, mid]} rotation={[0, axis === "x" ? 0 : Math.PI / 2, 0]}>
       {Array.from({ length: posts }, (_, i) => (
         <Box key={i} size={[STEEL, height, STEEL]} at={[-len / 2 + (i / (posts - 1)) * len, height / 2, 0]} m={m} />
       ))}
