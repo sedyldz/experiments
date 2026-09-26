@@ -10,5 +10,7 @@ The reference art for the tio.ist Pixel World:
 - `inside-entrance.jpeg`: looking toward the glass shopfront.
 - `iso-cutaway.jpeg`: an isometric dollhouse cutaway of the space. This is
   the framing and look the diorama is matched against.
+- `photo-spiral-stair.jpeg`: a photo of the real yellow spiral stair at the
+  back, with the ribbed duct beside it and the tiled coffee counter.
 - `IMG_8310.jpeg` (not supplied yet): a mood reference for the cutaway framing
   and halftone texture.

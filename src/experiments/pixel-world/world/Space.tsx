@@ -12,6 +12,21 @@ function Placed({ p }: { p: Placement }) {
   return createElement(kit[kind] as ComponentType<typeof props>, props);
 }
 
+/**
+ * The deck as rectangles [x0, x1, z0, z1] around the stair opening, which
+ * sits against the back wall.
+ */
+function deckMinusHole(): [number, number, number, number][] {
+  const { width } = layout.room;
+  const { zFrom, zTo, hole } = layout.mezzanine;
+  const X0 = -width / 2;
+  const X1 = width / 2;
+  const pieces: [number, number, number, number][] = [[X0, X1, hole.z1, zTo]];
+  if (hole.x0 > X0) pieces.push([X0, hole.x0, zFrom, hole.z1]);
+  if (hole.x1 < X1) pieces.push([hole.x1, X1, zFrom, hole.z1]);
+  return pieces;
+}
+
 /** The whole tio.ist space: the shell, the mezzanine, and every placement from layout.ts. */
 export function Space() {
   const { width, depth, height, wallThickness: t, floorThickness, cutawayStubHeight } = layout.room;
@@ -20,7 +35,7 @@ export function Space() {
 
   const ground = layout.placements.filter((p) => p.floor === "ground");
   const mezz = layout.placements.filter((p) => p.floor === "mezzanine");
-  const mzDepth = mz.zTo - mz.zFrom;
+  const deckPieces = deckMinusHole();
 
   return (
     <group>
@@ -49,9 +64,13 @@ export function Space() {
       </group>
 
       <group visible={floors.mezzanine}>
-        {/* The deck: a pale blue slab with a concrete top */}
-        <Box size={[width, mz.thickness - 0.03, mzDepth]} at={[0, mz.level - 0.03 - (mz.thickness - 0.03) / 2, mz.zFrom + mzDepth / 2]} m={flat("wallBlue", 3)} />
-        <Box size={[width, 0.03, mzDepth]} at={[0, mz.level - 0.015, mz.zFrom + mzDepth / 2]} m={flat("concrete", 3)} dither />
+        {/* The deck: a pale blue slab with a concrete top, minus the stair opening */}
+        {deckPieces.map(([x0, x1, z0, z1]) => (
+          <group key={`${x0}:${z0}`}>
+            <Box size={[x1 - x0, mz.thickness - 0.03, z1 - z0]} at={[(x0 + x1) / 2, mz.level - 0.03 - (mz.thickness - 0.03) / 2, (z0 + z1) / 2]} m={flat("wallBlue", 3)} />
+            <Box size={[x1 - x0, 0.03, z1 - z0]} at={[(x0 + x1) / 2, mz.level - 0.015, (z0 + z1) / 2]} m={flat("concrete", 3)} dither />
+          </group>
+        ))}
         {mezz.map((p, i) => (
           <Placed key={i} p={p} />
         ))}

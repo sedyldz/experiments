@@ -15,6 +15,7 @@ import {
   Stool,
   WallShelf,
 } from "./furniture";
+import { CoffeeStation, FireExtinguisher, FloorPlate, FuseBox, TrashBin, WallPanel, WallWindow } from "./coffee";
 import { HangingPothos, Monstera, Palm, Schefflera, ShelfTrailer, SmallTree } from "./plants";
 import { Curtain, Doorway, LinearLamp, PendantLamp, Pipe, Railing, SpiralStair, Stair } from "./structure";
 
@@ -48,6 +49,13 @@ export const kit = {
   doorway: Doorway,
   pendantLamp: PendantLamp,
   linearLamp: LinearLamp,
+  coffeeStation: CoffeeStation,
+  trashBin: TrashBin,
+  fireExtinguisher: FireExtinguisher,
+  floorPlate: FloorPlate,
+  wallPanel: WallPanel,
+  wallWindow: WallWindow,
+  fuseBox: FuseBox,
 };
 
 export type Kit = typeof kit;

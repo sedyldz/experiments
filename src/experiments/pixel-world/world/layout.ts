@@ -29,10 +29,16 @@ const MEZZ = {
 const UNDER = MEZZ.level - MEZZ.thickness; // headroom under the mezzanine
 
 /**
- * A steel spiral stair in front of the deck's right end. It's entered from
- * the room side (-X) and exits onto the deck (-Z).
+ * The yellow spiral stair at the back, in the corner nook under the deck
+ * (reference/photo-spiral-stair.jpeg). It rises through an opening in the
+ * deck. You step on facing the back wall (tread 0 points +Z), it winds
+ * clockwise, and you step off toward +X onto the deck.
  */
-const STAIR = { x: X1 - 0.95, z: MEZZ.front + 0.78, radius: 0.72 };
+const STAIR = { x: -1.85, z: Z0 + 0.82, radius: 0.72 };
+/** The opening in the deck the stair comes up through. */
+const HOLE = { x0: X0, x1: -1.05, z0: Z0, z1: Z0 + 1.65 };
+/** The nook under the deck around the stair: grey render walls, coffee counter, duct. */
+const NOOK = { x0: X0, x1: -0.45 };
 
 const DESK_ROW = { x: X1 - 0.35, z0: 0.85, count: 3, w: 1.2 };
 const deskZ = (i: number) => DESK_ROW.z0 + DESK_ROW.w * (i + 0.5);
@@ -59,14 +65,16 @@ export const layout = {
     zTo: MEZZ.front,
     level: MEZZ.level,
     thickness: MEZZ.thickness,
+    /** The opening for the spiral stair. */
+    hole: HOLE,
   },
 
   stair: {
     center: [STAIR.x, STAIR.z] as [number, number],
     radius: STAIR.radius,
-    /** Ground-floor entry (the first tread points -X) and deck exit (the last tread points -Z). */
-    entry: [STAIR.x - STAIR.radius - 0.3, STAIR.z] as [number, number],
-    exit: [STAIR.x, MEZZ.front - 0.35] as [number, number],
+    /** Ground-floor entry (in front of tread 0) and deck exit (past the top tread). */
+    entry: [STAIR.x, STAIR.z + STAIR.radius + 0.3] as [number, number],
+    exit: [HOLE.x1 + 0.3, STAIR.z] as [number, number],
   },
 
   /** The glass shopfront on the +Z wall. */
@@ -75,14 +83,27 @@ export const layout = {
   /** Everything else, placed from the kit by name. */
   placements: [
     // ─── Structure ──────────────────────────────────────────────
-    { kind: "spiralStair", floor: "ground", position: [STAIR.x, 0, STAIR.z], rise: MEZZ.level, radius: STAIR.radius },
-    { kind: "railing", floor: "mezzanine", from: X0, to: STAIR.x - 0.45, z: MEZZ.front + 0.04, y: MEZZ.level },
-    { kind: "railing", floor: "mezzanine", from: STAIR.x + 0.45, to: X1, z: MEZZ.front + 0.04, y: MEZZ.level },
+    { kind: "railing", floor: "mezzanine", from: X0, to: X1, z: MEZZ.front + 0.04, y: MEZZ.level },
 
-    // The services wall: the mustard pipe with the navy curtain beside it
-    { kind: "pipe", floor: "ground", position: [-1.05, 0, MEZZ.front + 0.02], height: H },
-    { kind: "curtain", floor: "ground", position: [-2.4, 0, MEZZ.front + 0.06], width: 1.25, height: UNDER - 0.03 },
-    { kind: "pipe", floor: "ground", position: [0.55, 1.3, Z0 + 0.12], height: 0.9, r: 0.06, elbow: { length: 0.8, dir: [1, 0] } },
+    // The pipe at the deck edge with the navy curtain, drawn open, beside it
+    { kind: "pipe", floor: "ground", position: [NOOK.x1 + 0.05, 0, MEZZ.front + 0.02], height: H },
+    { kind: "curtain", floor: "ground", position: [NOOK.x1 - 0.6, 0, MEZZ.front + 0.06], width: 0.55, height: UNDER - 0.03, pleat: 0.2 },
+
+    // ─── The stair nook (back left, under the deck) ─────────────
+    { kind: "wallPanel", floor: "ground", position: [(X0 + 0.55 + NOOK.x1) / 2, 0, Z0], w: NOOK.x1 - X0 - 0.55, h: UNDER },
+    { kind: "wallPanel", floor: "ground", position: [X0 + 0.275, 0, Z0], w: 0.55, h: UNDER, color: "white", shade: 3 },
+    { kind: "fuseBox", floor: "ground", position: [X0 + 0.3, 1.75, Z0] },
+    { kind: "wallWindow", floor: "ground", position: [STAIR.x + 0.1, 1.55, Z0] },
+    { kind: "spiralStair", floor: "ground", position: [STAIR.x, 0, STAIR.z], rise: MEZZ.level, radius: STAIR.radius, sweep: -Math.PI * 1.5, endAngle: 0 },
+    // The ribbed yellow duct beside the stair, with its checker plate and the extinguisher
+    { kind: "pipe", floor: "ground", position: [NOOK.x1 - 0.3, 0, Z0 + 0.22], height: H, r: 0.16, ribs: 0.32 },
+    { kind: "floorPlate", floor: "ground", position: [NOOK.x1 - 0.35, 0, Z0 + 0.45], w: 0.6, d: 0.7 },
+    { kind: "fireExtinguisher", floor: "ground", position: [NOOK.x1 - 0.05, 0, Z0 + 0.15] },
+    { kind: "coffeeStation", floor: "ground", position: [X0 + 0.6, 0, Z0 + 2.15] },
+    { kind: "trashBin", floor: "ground", position: [X0 + 1.35, 0, Z0 + 2.05] },
+    // Up top, a yellow landing plate where the stair lets out, and a guard rail along the opening
+    { kind: "floorPlate", floor: "mezzanine", position: [HOLE.x1 + 0.3, MEZZ.level, STAIR.z], w: 0.6, d: 0.8 },
+    { kind: "railing", floor: "mezzanine", from: X0, to: HOLE.x1, z: HOLE.z1, y: MEZZ.level, height: 0.95 },
 
     { kind: "linearLamp", floor: "ground", position: [0.3, H, 2.3], rotation: HALF_PI, length: 2.8, drop: 1.1 },
 
@@ -139,34 +160,28 @@ export const layout = {
     { kind: "books", floor: "ground", position: [X0 + 0.23, 0.66, Z1 - 1.1], rotation: HALF_PI, count: 5, seed: 4 },
     { kind: "highTable", floor: "ground", position: [-1.6, 0, Z1 - 0.8], w: 1.3, d: 0.7, h: 0.95, casters: true },
 
-    // ─── Under the mezzanine, left: the dining room ─────────────
-    { kind: "rug", floor: "ground", position: [-2.15, 0, -3.5], w: 2.0, d: 2.3 },
-    { kind: "diningTable", floor: "ground", position: [-2.15, 0, -3.6], w: 1.45, d: 0.8 },
-    ...[-2.6, -2.15, -1.7].map((x): Placement => ({ kind: "diningChair", floor: "ground", position: [x, 0, -4.22] })),
-    { kind: "bench", floor: "ground", position: [-2.15, 0, -2.9], w: 1.35 },
-    { kind: "frame", floor: "ground", position: [-2.8, 1.55, Z0], w: 0.38, h: 0.48 },
-    { kind: "frame", floor: "ground", position: [-2.2, 1.45, Z0], w: 0.42, h: 0.34, art: ["oak", 3] },
-    { kind: "frame", floor: "ground", position: [-1.62, 1.6, Z0], w: 0.32, h: 0.42, art: ["mustard", 3] },
-    ...[-2.45, -1.85].map((x): Placement => ({ kind: "pendantLamp", floor: "ground", position: [x, UNDER, -3.6], drop: 0.75, style: "dome" })),
-
-    // ─── Under the mezzanine, right: the kitchen + back door ────
-    { kind: "doorway", floor: "ground", position: [-0.3, 0, Z0] },
-    { kind: "kitchenCounter", floor: "ground", position: [2.15, 0, Z0], w: 2.1 },
-    { kind: "highTable", floor: "ground", position: [0.75, 0, -3.3], w: 1.2, d: 0.65, shelf: false },
-    ...[0.4, 1.1].map((x): Placement => ({ kind: "stool", floor: "ground", position: [x, 0, -2.75] })),
-    ...[0.35, 0.75, 1.15].map((x): Placement => ({ kind: "pendantLamp", floor: "ground", position: [x, UNDER, -3.3], drop: 0.6, style: "cone" })),
+    // ─── Under the mezzanine, right: the dining room + back door ─
+    { kind: "rug", floor: "ground", position: [1.3, 0, -3.5], w: 2.0, d: 2.3 },
+    { kind: "diningTable", floor: "ground", position: [1.3, 0, -3.6], w: 1.45, d: 0.8 },
+    ...[0.85, 1.3, 1.75].map((x): Placement => ({ kind: "diningChair", floor: "ground", position: [x, 0, -4.22] })),
+    { kind: "bench", floor: "ground", position: [1.3, 0, -2.9], w: 1.35 },
+    { kind: "frame", floor: "ground", position: [0.1, 1.55, Z0], w: 0.38, h: 0.48 },
+    { kind: "frame", floor: "ground", position: [0.7, 1.45, Z0], w: 0.42, h: 0.34, art: ["oak", 3] },
+    { kind: "frame", floor: "ground", position: [1.28, 1.6, Z0], w: 0.32, h: 0.42, art: ["mustard", 3] },
+    ...[1.0, 1.6].map((x): Placement => ({ kind: "pendantLamp", floor: "ground", position: [x, UNDER, -3.6], drop: 0.75, style: "dome" })),
+    { kind: "doorway", floor: "ground", position: [2.6, 0, Z0] },
 
     // ─── Mezzanine ──────────────────────────────────────────────
-    ...[-2.55, -1.3, -0.05, 1.2].map((x): Placement => ({ kind: "desk", floor: "mezzanine", position: [x, MEZZ.level, Z0 + 0.38], w: 1.22 })),
-    ...[-2.55, -1.3, -0.05, 1.2].map((x, i): Placement => ({ kind: "officeChair", floor: "mezzanine", position: [x + (i % 2 ? 0.1 : -0.1), MEZZ.level, Z0 + 1.15], rotation: Math.PI + (i % 2 ? 0.2 : -0.15) })),
-    { kind: "laptop", floor: "mezzanine", position: [-1.3, MEZZ.level + 0.75, Z0 + 0.42] },
-    { kind: "smallTree", floor: "mezzanine", position: [1.6, MEZZ.level + 0.75, Z0 + 0.3], seed: 61, scale: 0.8 },
+    ...[-0.05, 1.2, 2.45].map((x): Placement => ({ kind: "desk", floor: "mezzanine", position: [x, MEZZ.level, Z0 + 0.38], w: 1.22 })),
+    ...[-0.05, 1.2, 2.45].map((x, i): Placement => ({ kind: "officeChair", floor: "mezzanine", position: [x + (i % 2 ? 0.1 : -0.1), MEZZ.level, Z0 + 1.15], rotation: Math.PI + (i % 2 ? 0.2 : -0.15) })),
+    { kind: "laptop", floor: "mezzanine", position: [1.2, MEZZ.level + 0.75, Z0 + 0.42] },
+    { kind: "smallTree", floor: "mezzanine", position: [0.35, MEZZ.level + 0.75, Z0 + 0.3], seed: 61, scale: 0.8 },
     { kind: "palm", floor: "mezzanine", position: [X0 + 0.4, MEZZ.level, MEZZ.front - 0.45], seed: 62, upright: true, scale: 1.3 },
-    { kind: "palm", floor: "mezzanine", position: [2.55, MEZZ.level, Z0 + 0.4], seed: 63, scale: 1.2 },
-    ...[-1.5, 0.7].map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, -3.7], drop: 1.25, style: "globe" })),
+    { kind: "palm", floor: "mezzanine", position: [X1 - 0.35, MEZZ.level, -2.5], seed: 63, scale: 1.2 },
+    ...[0.55, 1.85].map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, -3.7], drop: 1.25, style: "globe" })),
     // Pothos baskets hung off the railing, trailing over the deck edge
     { kind: "hangingPothos", floor: "mezzanine", position: [-2.55, MEZZ.level + 1.0, MEZZ.front + 0.14], drop: 0.75, seed: 71, length: 1.3 },
-    { kind: "hangingPothos", floor: "mezzanine", position: [-0.35, MEZZ.level + 1.0, MEZZ.front + 0.14], drop: 0.8, seed: 72, length: 1.0 },
+    { kind: "hangingPothos", floor: "mezzanine", position: [0.25, MEZZ.level + 1.0, MEZZ.front + 0.14], drop: 0.8, seed: 72, length: 1.0 },
     { kind: "hangingPothos", floor: "mezzanine", position: [1.55, MEZZ.level + 1.0, MEZZ.front + 0.14], drop: 0.6, seed: 73, length: 1.4 },
   ] satisfies Placement[] as Placement[],
 };

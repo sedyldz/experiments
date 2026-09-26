@@ -12,14 +12,18 @@ const STEEL = 0.05;
  * The mustard services pipe: a vertical run from `bottom` to `top`, with an
  * optional elbow that turns into the wall at the top.
  */
-export function Pipe({ position, height, r = 0.075, elbow }: { position: Vec3; height: number; r?: number; elbow?: { length: number; dir: [number, number] } }) {
+export function Pipe({ position, height, r = 0.075, elbow, ribs }: { position: Vec3; height: number; r?: number; elbow?: { length: number; dir: [number, number] }; ribs?: number }) {
   const m = flat("mustard");
+  // A spiral-wound duct shows a seam every `ribs` meters. A plain pipe just
+  // has two collars.
+  const collars = ribs
+    ? Array.from({ length: Math.floor(height / ribs) }, (_, i) => (i + 0.5) * ribs)
+    : [0.4, height - 0.4];
   return (
     <group position={position}>
-      <Cyl r={r} h={height} at={[0, height / 2, 0]} m={m} />
-      {/* Collars */}
-      {[0.4, height - 0.4].map((y) => (
-        <Cyl key={y} r={r * 1.35} h={0.06} at={[0, y, 0]} m={flat("mustard", 1)} />
+      <Cyl r={r} h={height} at={[0, height / 2, 0]} m={m} seg={10} />
+      {collars.map((y) => (
+        <Cyl key={y} r={ribs ? r * 1.08 : r * 1.35} h={ribs ? 0.03 : 0.06} at={[0, y, 0]} m={flat("mustard", ribs ? 3 : 1)} seg={10} />
       ))}
       {elbow && (
         <group position={[0, height, 0]} rotation={[0, Math.atan2(-elbow.dir[1], elbow.dir[0]), 0]}>
@@ -110,32 +114,42 @@ export function Stair({ position, rotation = 0, rise, run, width = 0.9, railSide
 }
 
 /**
- * A compact steel spiral stair. The first tread points toward -X (entered
- * from the room), and it winds `sweep` radians up to `rise`, so the top
- * tread points toward -Z (onto the deck).
+ * The tio.ist spiral stair (see reference/photo-spiral-stair.jpeg): a
+ * mustard-yellow steel column with grey treads in yellow frames, scroll
+ * balusters and a helical yellow handrail. Tread 0 points along
+ * `endAngle - sweep` and the top tread points along `endAngle`. Both are
+ * yaw angles, where 0 = +X and PI/2 = -Z. A negative sweep winds clockwise.
  */
 export function SpiralStair({ position, rise, radius = 0.72, sweep = Math.PI * 1.5, endAngle = Math.PI / 2 }: { position: Vec3; rise: number; radius?: number; sweep?: number; endAngle?: number }) {
   const steps = Math.round(rise / 0.2);
   const stepRise = rise / steps;
-  const blue = flat("cobalt");
+  const yellow = flat("mustard");
   const treadLen = radius - 0.08;
   const angle = (i: number) => endAngle - sweep + (i / (steps - 1)) * sweep;
   const outer = (i: number, y: number): Vec3 => [Math.cos(angle(i)) * radius, y, -Math.sin(angle(i)) * radius];
   return (
     <group position={position}>
-      <Cyl r={0.06} h={rise + 1.0} at={[0, (rise + 1.0) / 2, 0]} m={blue} />
+      <Cyl r={0.07} h={rise + 0.15} at={[0, (rise + 0.15) / 2, 0]} m={yellow} />
       {Array.from({ length: steps }, (_, i) => {
         const y = (i + 1) * stepRise;
         return (
           <group key={i} rotation={[0, angle(i), 0]}>
-            <Box size={[treadLen, 0.045, 0.34]} at={[0.06 + treadLen / 2, y - 0.022, 0]} m={flat("oak")} />
-            <Box size={[0.04, 0.9, 0.04]} at={[radius - 0.02, y + 0.45, 0]} m={blue} />
+            {/* A grey tread in a yellow frame */}
+            <Box size={[treadLen, 0.03, 0.3]} at={[0.06 + treadLen / 2, y - 0.015, 0]} m={flat("concrete", 1)} />
+            <Box size={[treadLen + 0.02, 0.035, 0.34]} at={[0.06 + treadLen / 2, y - 0.045, 0]} m={yellow} shadow={false} />
+            {/* A baluster with two scroll curls */}
+            <Box size={[0.025, 0.9, 0.025]} at={[radius - 0.02, y + 0.45, 0]} m={yellow} />
+            {[0.32, 0.58].map((h, k) => (
+              <mesh key={h} position={[radius - 0.02, y + h, k ? 0.05 : -0.05]} material={yellow} castShadow>
+                <torusGeometry args={[0.055, 0.012, 4, 10]} />
+              </mesh>
+            ))}
           </group>
         );
       })}
       {/* The helical handrail, as straight segments between the post tops */}
       {Array.from({ length: steps - 1 }, (_, i) => (
-        <Bar key={i} from={outer(i, (i + 1) * stepRise + 0.9)} to={outer(i + 1, (i + 2) * stepRise + 0.9)} t={0.06} m={blue} />
+        <Bar key={i} from={outer(i, (i + 1) * stepRise + 0.9)} to={outer(i + 1, (i + 2) * stepRise + 0.9)} t={0.045} m={yellow} />
       ))}
     </group>
   );

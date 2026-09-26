@@ -38,6 +38,10 @@ export const palette = {
   orange: ramp(["#7a2e13", "#b0461d", "#d9642e", "#f08a50"], 2),
   tan: ramp(["#9c7048", "#c49464", "#dbb07c"], 1),
   purple: ramp(["#4e2640", "#7a3f64", "#a05e87"], 1),
+  red: ramp(["#7c1d20", "#b52d2c", "#dd4f45"], 1),
+  pink: ramp(["#b8324f", "#e0587a"], 0),
+  /** The rough grey cement render on the stair wall */
+  render: ramp(["#474744", "#5b5a56", "#706f6a", "#8a8883"], 2),
   glass: ramp(["#9fb9d6", "#c3d7ec", "#e3eef8"], 1),
 
   // Plants: lots of greens, from deep shade to backlit leaf
