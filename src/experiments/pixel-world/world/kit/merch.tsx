@@ -199,3 +199,34 @@ export function LogoSign({ position, rotation = 0, neon = false }: Placed & { ne
     </group>
   );
 }
+
+/**
+ * The blue A-frame sidewalk sign ("This is where you get work done", with a
+ * QR code). It faces +Z, toward the street.
+ */
+export function AFrameSign({ position, rotation = 0 }: Placed) {
+  const blue = flat("cobalt", 3);
+  const white = flat("white", 3);
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      {[1, -1].map((side) => (
+        <group key={side} position={[0, 0, side * 0.12]} rotation={[side * -0.2, side === 1 ? 0 : Math.PI, 0]}>
+          <Box size={[0.55, 0.95, 0.03]} at={[0, 0.48, 0]} m={blue} />
+          <Box size={[0.36, 0.035, 0.005]} at={[-0.04, 0.8, 0.018]} m={white} shadow={false} />
+          <Box size={[0.3, 0.035, 0.005]} at={[-0.07, 0.72, 0.018]} m={white} shadow={false} />
+          <Box size={[0.34, 0.035, 0.005]} at={[-0.05, 0.64, 0.018]} m={white} shadow={false} />
+          <Box size={[0.16, 0.16, 0.005]} at={[0, 0.3, 0.018]} m={white} shadow={false} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** A strip of grey paving in front of the shopfront. `position` is its center at ground level. */
+export function Sidewalk({ position, w, d }: { position: Vec3; w: number; d: number }) {
+  return (
+    <mesh position={[position[0], position[1] - 0.06, position[2]]} material={flat("concrete", 2)} receiveShadow userData={{ pixel: { dither: true } }}>
+      <boxGeometry args={[w, 0.12, d]} />
+    </mesh>
+  );
+}

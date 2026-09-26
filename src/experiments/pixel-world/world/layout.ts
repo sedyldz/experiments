@@ -133,6 +133,12 @@ export const layout = {
   facade: { door: { x: 2.2, w: 1.1 } },
 
   placements: [
+    // ═══ OUTSIDE (reference/photo-sidewalk.jpeg) ════════════════
+    // A strip of pavement, the wooden bench on blue legs under the window, and the blue A-frame sign
+    { kind: "sidewalk", floor: "ground", position: [0, 0, Z1 + 0.2 + 0.8], w: W + 0.4, d: 1.6 },
+    { kind: "highTable", floor: "ground", position: [-1.7, 0, Z1 + 0.5], w: 1.7, d: 0.38, h: 0.46, shelf: false },
+    { kind: "aFrameSign", floor: "ground", position: [0.9, 0, Z1 + 1.25], rotation: 0.35 },
+
     // ═══ ENTRANCE (double height) ═══════════════════════════════
     // Left: two tables at the window, facing the street
     ...[-2.6, -1.35].map((x): Placement => ({ kind: "desk", floor: "ground", position: [x, 0, Z1 - 0.4], rotation: Math.PI, w: 1.2 })),

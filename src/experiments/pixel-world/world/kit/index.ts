@@ -17,7 +17,7 @@ import {
 } from "./furniture";
 import { CoffeeStation, FireExtinguisher, FloorPlate, FuseBox, TrashBin, WallPanel, WallWindow } from "./coffee";
 import { BranchPlant, Climber, HangingPothos, Monstera, Palm, RubberPlant, Schefflera, ShelfTrailer, SmallTree } from "./plants";
-import { LogoSign, MerchWall, Mirror, PosterBoard } from "./merch";
+import { AFrameSign, LogoSign, MerchWall, Mirror, PosterBoard, Sidewalk } from "./merch";
 import { AirCon, ArmChair, Basin, Sofa, Kilim, KitchenIsland, KitchenRun, MetalStool, Partition, Toilet, WcSign } from "./upstairs";
 import { Curtain, Doorway, LinearLamp, PendantLamp, Pipe, Railing, Slab, SpiralStair, Stair } from "./structure";
 
@@ -77,6 +77,8 @@ export const kit = {
   slab: Slab,
   sofa: Sofa,
   airCon: AirCon,
+  aFrameSign: AFrameSign,
+  sidewalk: Sidewalk,
 };
 
 export type Kit = typeof kit;
