@@ -22,11 +22,13 @@ export const palette = {
   // Outline + deepest shadow. Also the fallback "void" color.
   ink: ramp(["#1c2130"], 0),
 
-  // Surfaces (sampled from the reference illustrations in /reference)
-  cream: ramp(["#9c8f78", "#c9bb9c", "#e2d6b6", "#f3ecd3", "#fbf7e9"], 3),
+  // Surfaces (sampled from the reference illustrations and photos in /reference)
+  cream: ramp(["#9a958a", "#c4beb2", "#dcd7cc", "#ece9e1", "#f8f6f1"], 3),
   wallBlue: ramp(["#6f84a3", "#8fa3c1", "#b1c5de", "#cfdcec", "#e6eef7"], 2),
-  concrete: ramp(["#7a6e62", "#9d8f80", "#bcad9b", "#d3c5b2", "#e6dccd"], 3),
+  concrete: ramp(["#5f5b55", "#7d7870", "#9c968c", "#b5afa5", "#cbc6bc"], 3),
   oak: ramp(["#5e3a24", "#8a5a3a", "#b68358", "#d19c68", "#e8bf8a"], 2),
+  /** Light pine (the kitchen furniture upstairs) */
+  pine: ramp(["#8a5f2c", "#b98844", "#dcae68", "#efcf92"], 2),
   cobalt: ramp(["#131c3d", "#1f2f66", "#2c4488", "#4560a8", "#7189c8"], 2),
   charcoal: ramp(["#1f2129", "#33353f", "#4a4d58", "#6b6e7a"], 1),
   white: ramp(["#a7a9ae", "#cfd0d2", "#e8e7e3", "#f8f7f3"], 2),

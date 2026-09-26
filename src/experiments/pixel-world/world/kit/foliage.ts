@@ -23,6 +23,8 @@ export const leafProfiles = {
   oval: (t: number) => 0.2 * Math.sin(Math.PI * t),
   /** A broad heart, wide near the stem (pothos). */
   heart: (t: number) => 0.42 * Math.pow(Math.sin(Math.PI * (0.18 + 0.82 * t)), 0.8),
+  /** A broad glossy oval (rubber plant). */
+  broad: (t: number) => 0.3 * Math.pow(Math.sin(Math.PI * t), 0.8),
   /** A long strap (palms, bird of paradise, snake plant). */
   lance: (t: number) => 0.09 * Math.sin(Math.PI * Math.pow(t, 0.8)),
 } satisfies Record<string, LeafProfile>;

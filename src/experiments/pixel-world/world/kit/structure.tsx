@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { flat, glow } from "../materials";
 import { Bar, Box, Cyl, Wire, type Vec3 } from "./primitives";
+import { LogoSign } from "./merch";
 
 // Architectural pieces of the kit: pipe, railing, curtain, stair, doorway,
 // glass facade and lamps.
@@ -169,31 +170,38 @@ export function Doorway({ position, w = 0.95, h = 2.15, open = true }: { positio
 }
 
 /**
- * The glass shopfront: a grid of blue steel mullions filled with pale glass,
- * with a door. It runs along X, centered, with the room behind it at -Z.
+ * The shopfront (reference/photo-shopfront.jpeg): heavy dark navy frames
+ * around big panes, a solid navy lower panel on a cobalt tiled plinth, a
+ * door with a solid lower half, and the blue neon "tio" sign glowing in the
+ * upper pane. It runs along X, centered, with the room behind it at -Z.
  */
 export function GlassFacade({ position, rotation = 0, width, height, door = { x: -0.6, w: 1.1 } }: { position: Vec3; rotation?: number; width: number; height: number; door?: { x: number; w: number } }) {
-  const m = flat("cobalt");
-  const cols = Math.max(2, Math.round(width / 1.3));
-  const transoms = [0.05, 2.4, 2.75, height - 0.05];
+  const frame = flat("navy", 0);
+  const sill = 0.75; // top of the solid lower panel
+  const transom = 2.55;
+  const cols = [-width / 2, -width / 2 + (door.x - door.w / 2 + width / 2) / 2, door.x - door.w / 2, door.x + door.w / 2, width / 2];
   return (
     <group position={position} rotation={[0, rotation, 0]}>
-      <Box size={[width, height, 0.03]} at={[0, height / 2, 0]} m={flat("glass")} shadow={false} />
-      {Array.from({ length: cols + 1 }, (_, i) => (
-        <Box key={i} size={[0.08, height, 0.1]} at={[-width / 2 + (i / cols) * width, height / 2, 0]} m={m} />
+      {/* The glazing */}
+      <Box size={[width, height - sill, 0.03]} at={[0, sill + (height - sill) / 2, 0]} m={flat("glass")} shadow={false} />
+      {/* The solid lower panel and the tiled plinth */}
+      <Box size={[width, sill, 0.1]} at={[0, sill / 2, 0]} m={frame} />
+      <Box size={[width + 0.02, 0.28, 0.12]} at={[0, 0.14, 0.01]} m={flat("cobalt", 1)} />
+      {/* Mullions and transoms */}
+      {cols.map((x) => (
+        <Box key={x} size={[0.12, height, 0.12]} at={[x, height / 2, 0]} m={frame} />
       ))}
-      {transoms.map((y) => (
-        <Box key={y} size={[width, y === 2.4 || y === 2.75 ? 0.08 : 0.1, 0.1]} at={[0, y, 0]} m={m} />
+      {[sill, transom, height - 0.06].map((y) => (
+        <Box key={y} size={[width, 0.12, 0.12]} at={[0, y, 0]} m={frame} />
       ))}
-      {/* A cream beam between the ground and upper glazing */}
-      <Box size={[width, 0.3, 0.14]} at={[0, 2.58, 0]} m={flat("cream", 2)} />
-      {/* The door leaf */}
-      <group position={[door.x, 0, 0.03]}>
-        <Box size={[door.w, 2.3, 0.05]} at={[0, 1.2, 0]} m={flat("glass", 0)} shadow={false} />
-        <Box size={[0.07, 2.35, 0.08]} at={[-door.w / 2, 1.2, 0]} m={m} />
-        <Box size={[0.07, 2.35, 0.08]} at={[door.w / 2, 1.2, 0]} m={m} />
-        <Box size={[door.w, 0.14, 0.08]} at={[0, 0.07, 0]} m={m} />
-        <Box size={[0.2, 0.12, 0.02]} at={[0.15, 1.35, 0.05]} m={flat("orange", 3)} shadow={false} />
+      {/* The door: a solid lower half and a glass upper half */}
+      <group position={[door.x, 0, 0.02]}>
+        <Box size={[door.w - 0.1, 1.1, 0.06]} at={[0, 0.55, 0]} m={frame} />
+        <Box size={[0.05, 0.2, 0.08]} at={[-door.w / 2 + 0.15, 1.2, 0.03]} m={flat("charcoal", 1)} shadow={false} />
+      </group>
+      {/* The blue neon "tio" sign in the upper pane */}
+      <group position={[door.x - 0.2, transom + 0.6, -0.08]} rotation={[0, Math.PI, 0]}>
+        <LogoSign position={[0, 0, 0]} neon />
       </group>
     </group>
   );
@@ -205,7 +213,7 @@ type PendantStyle = "globe" | "cone" | "dome";
  * A pendant lamp hanging from `position` (the ceiling anchor) on a cord of
  * length `drop`.
  */
-export function PendantLamp({ position, drop, style = "globe" }: { position: Vec3; drop: number; style?: PendantStyle }) {
+export function PendantLamp({ position, drop, style = "globe", label = false }: { position: Vec3; drop: number; style?: PendantStyle; label?: boolean }) {
   return (
     <group position={position}>
       <Wire points={[[0, 0, 0], [0, -drop, 0]]} />
@@ -217,6 +225,8 @@ export function PendantLamp({ position, drop, style = "globe" }: { position: Vec
             <mesh position={[0, -0.18, 0]} material={glow("warmLight", 2)} userData={{ pixel: {} }}>
               <sphereGeometry args={[0.15, 12, 8]} />
             </mesh>
+            {/* The red "hello" / "world!" lettering on the upstairs globes */}
+            {label && <Box size={[0.16, 0.05, 0.02]} at={[0, -0.18, 0.145]} m={flat("red", 1)} shadow={false} />}
           </>
         )}
         {style === "cone" && (
@@ -227,7 +237,7 @@ export function PendantLamp({ position, drop, style = "globe" }: { position: Vec
         )}
         {style === "dome" && (
           <>
-            <Cyl r={0.05} r2={0.22} h={0.18} at={[0, -0.09, 0]} m={flat("charcoal", 1)} shadow={false} />
+            <Cyl r={0.05} r2={0.22} h={0.18} at={[0, -0.09, 0]} m={flat("navy", 2)} shadow={false} />
             <Cyl r={0.19} h={0.01} at={[0, -0.185, 0]} m={glow("warmLight", 1)} shadow={false} />
           </>
         )}

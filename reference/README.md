@@ -12,5 +12,14 @@ The reference art for the tio.ist Pixel World:
   the framing and look the diorama is matched against.
 - `photo-spiral-stair.jpeg`: a photo of the real yellow spiral stair at the
   back, with the ribbed duct beside it and the tiled coffee counter.
+- `photo-merch-wall.jpeg`: the blue ladder merch wall by the entrance.
+- `photo-wall-shelf.jpeg`: the plant shelf above the desk row.
+- `photo-mirror.jpeg`: the mirror, with the space under the mezzanine
+  reflected in it (yellow furniture, felt panels).
+- `photo-mezzanine-desks.jpeg`: the upstairs desks at the railing and the
+  "hello" / "world!" globes.
+- `photo-kitchen-upstairs.jpeg`: the kitchen on the mezzanine.
+- `photo-shopfront.jpeg`, `photo-street.jpeg`: outside. The street isn't
+  modeled, but the shopfront details are.
 - `IMG_8310.jpeg` (not supplied yet): a mood reference for the cutaway framing
   and halftone texture.

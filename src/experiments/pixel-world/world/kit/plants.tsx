@@ -259,14 +259,15 @@ export function Trailing({
 }
 
 /** A hanging basket on a cord, with trailing pothos. `drop` is the cord length below the anchor. */
-export function HangingPothos({ position, seed = 6, drop = 0.5, length = 1.2 }: { position: Vec3; seed?: number; drop?: number; length?: number }) {
+export function HangingPothos({ position, seed = 6, drop = 0.5, length = 1.2, color = "green", pot = "white" }: { position: Vec3; seed?: number; drop?: number; length?: number; color?: PaletteKey; pot?: PotStyle }) {
+  const shades = color === "purple" ? [0, 1, 2] : [3, 4, 5];
   return (
     <group position={position}>
       <Wire points={[[0, 0, 0], [0, -drop, 0]]} />
       <group position={[0, -drop - 0.18, 0]}>
-        <Pot r={0.15} h={0.18} style="white" />
+        <Pot r={0.15} h={0.18} style={pot} />
         <group position={[0, 0.18, 0]}>
-          <Trailing seed={seed} length={length} strands={6} spread={0.16} />
+          <Trailing seed={seed} length={length} strands={6} spread={0.16} color={color} shades={shades} />
         </group>
       </group>
     </group>
@@ -282,6 +283,79 @@ export function ShelfTrailer({ position, seed = 7, length = 0.8, color = "green"
       <group position={[0, 0.16, 0]}>
         <Trailing seed={seed} length={length} strands={4} spread={0.14} color={color} shades={shades} />
       </group>
+    </group>
+  );
+}
+
+/** A rubber plant (ficus elastica): a bare woody stem with big glossy dark ovals. */
+export function RubberPlant({ position, seed = 8, scale = 1, pot = "cream", rotation = 0 }: PlantProps) {
+  const potH = 0.34;
+  return (
+    <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      <Pot r={0.2} h={potH} style={pot} />
+      <FoliageMeshes
+        build={(b) => {
+          const r = rng(seed);
+          const top = V(0.05, potH + 1.3, 0.02);
+          b.stem(V(0, potH, 0), top, 0.03, 1, "oak");
+          for (let i = 0; i < 12; i++) {
+            const f = 0.25 + (i / 12) * 0.75;
+            const at = V(0, potH, 0).lerp(top, f);
+            b.leaf({ kind: "broad", at, yaw: i * 2.3 + r() * 0.5, pitch: -0.25 + r() * 0.5, size: 0.3 + r() * 0.08, shade: 1 + Math.floor(r() * 3), fold: 0.15 });
+          }
+        }}
+      />
+    </group>
+  );
+}
+
+/** A climbing monstera adansonii trained up a bamboo stake, with small holey leaves. */
+export function Climber({ position, seed = 10, scale = 1, pot = "cream", rotation = 0, height = 1.6 }: PlantProps & { height?: number }) {
+  const potH = 0.34;
+  return (
+    <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      <Pot r={0.18} h={potH} style={pot} />
+      <Cyl r={0.012} h={height} at={[0, potH + height / 2, 0]} m={flat("tan", 2)} />
+      <FoliageMeshes
+        build={(b) => {
+          const r = rng(seed);
+          let prev = V(0, potH, 0);
+          const n = 16;
+          for (let i = 1; i <= n; i++) {
+            const y = potH + (i / n) * height;
+            const p = V(Math.sin(i * 1.3) * 0.08, y, Math.cos(i * 1.3) * 0.08);
+            b.stem(prev, p, 0.012, 2);
+            b.leaf({ kind: "monstera", at: p, yaw: i * 2.1 + r(), pitch: -0.3 + r() * 0.5, size: 0.14 + r() * 0.06, shade: 3 + Math.floor(r() * 3), fold: 0.2 });
+            prev = p;
+          }
+        }}
+      />
+    </group>
+  );
+}
+
+/** A cane begonia: bare zigzag canes with a few red-backed leaves. */
+export function BranchPlant({ position, seed = 12, scale = 1, pot = "cream", rotation = 0 }: PlantProps) {
+  const potH = 0.34;
+  return (
+    <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      <Pot r={0.2} h={potH} style={pot} />
+      <FoliageMeshes
+        build={(b) => {
+          const r = rng(seed);
+          for (let c = 0; c < 5; c++) {
+            let p = V(0, potH, 0);
+            const a = r() * 6.28;
+            for (let k = 0; k < 5; k++) {
+              const q = p.clone().add(V(Math.cos(a + (k % 2 ? 0.8 : -0.8)) * 0.18, 0.25 + r() * 0.1, Math.sin(a + (k % 2 ? 0.8 : -0.8)) * 0.18));
+              b.stem(p, q, 0.02, 0, "oak");
+              p = q;
+            }
+            b.leaf({ kind: "heart", at: p, yaw: a, pitch: -0.2, size: 0.2, shade: 1 }, "terracotta");
+            b.leaf({ kind: "heart", at: p, yaw: a + 2, pitch: 0.1, size: 0.18, shade: 0 }, "terracotta");
+          }
+        }}
+      />
     </group>
   );
 }

@@ -8,6 +8,9 @@ import { Box, Cyl, type Vec3 } from "./primitives";
 
 const STEEL = 0.05;
 
+/** Steel frames are tio.ist blue, except the yellow set under the mezzanine. */
+export type FrameColor = "cobalt" | "mustard";
+
 interface Placed {
   position: Vec3;
   /** Rotation around Y, in radians. */
@@ -18,8 +21,8 @@ interface Placed {
  * A blue steel frame of four legs, with side stretchers and a back
  * stretcher. Its outer size is `w` x `d`, and the top of the legs is at `h`.
  */
-function SteelFrame({ w, d, h, stretcherY = 0.12, back = true }: { w: number; d: number; h: number; stretcherY?: number; back?: boolean }) {
-  const m = flat("cobalt");
+function SteelFrame({ w, d, h, stretcherY = 0.12, back = true, frame = "cobalt" }: { w: number; d: number; h: number; stretcherY?: number; back?: boolean; frame?: FrameColor }) {
+  const m = flat(frame);
   const x = w / 2 - STEEL / 2;
   const z = d / 2 - STEEL / 2;
   return (
@@ -45,24 +48,33 @@ function SteelFrame({ w, d, h, stretcherY = 0.12, back = true }: { w: number; d:
 }
 
 /** A wall desk: oak top on a blue steel frame (the tio.ist desk row). */
-export function Desk({ position, rotation = 0, w = 1.4, d = 0.7, h = 0.75 }: Placed & { w?: number; d?: number; h?: number }) {
+export function Desk({ position, rotation = 0, w = 1.4, d = 0.7, h = 0.75, frame, divider = false }: Placed & { w?: number; d?: number; h?: number; frame?: FrameColor; divider?: boolean }) {
   return (
     <group position={position} rotation={[0, rotation, 0]}>
-      <SteelFrame w={w - 0.04} d={d - 0.04} h={h - 0.04} />
+      <SteelFrame w={w - 0.04} d={d - 0.04} h={h - 0.04} frame={frame} />
       <Box size={[w, 0.04, d]} at={[0, h - 0.02, 0]} m={flat("oak")} />
+      {/* A grey felt privacy divider standing on the back edge, with blue straps */}
+      {divider && (
+        <group position={[0, h + 0.28, -d / 2 + 0.04]}>
+          <Box size={[w * 0.6, 0.55, 0.04]} at={[0, 0, 0]} m={flat("white", 1)} />
+          {[-0.15, 0.15].map((x) => (
+            <Box key={x} size={[0.03, 0.56, 0.05]} at={[x * w, 0, 0]} m={flat("cobalt")} shadow={false} />
+          ))}
+        </group>
+      )}
     </group>
   );
 }
 
 /** A tall standing table: oak top on a blue frame with a low shelf. Optionally on casters. */
-export function HighTable({ position, rotation = 0, w = 1.8, d = 0.7, h = 1.05, shelf = true, casters = false }: Placed & { w?: number; d?: number; h?: number; shelf?: boolean; casters?: boolean }) {
+export function HighTable({ position, rotation = 0, w = 1.8, d = 0.7, h = 1.05, shelf = true, casters = false, frame }: Placed & { w?: number; d?: number; h?: number; shelf?: boolean; casters?: boolean; frame?: FrameColor }) {
   const lift = casters ? 0.08 : 0;
   return (
     <group position={position} rotation={[0, rotation, 0]}>
       <group position={[0, lift, 0]}>
-        <SteelFrame w={w - 0.04} d={d - 0.04} h={h - 0.05 - lift} stretcherY={0.3} />
+        <SteelFrame w={w - 0.04} d={d - 0.04} h={h - 0.05 - lift} stretcherY={Math.min(0.3, h * 0.35)} frame={frame} />
         <Box size={[w, 0.05, d]} at={[0, h - 0.025 - lift, 0]} m={flat("oak")} />
-        {shelf && <Box size={[w - 0.1, 0.03, d - 0.1]} at={[0, 0.3, 0]} m={flat("oak", 3)} />}
+        {shelf && <Box size={[w - 0.1, 0.03, d - 0.1]} at={[0, Math.min(0.3, h * 0.35), 0]} m={flat("oak", 3)} />}
       </group>
       {casters &&
         [
@@ -78,9 +90,9 @@ export function HighTable({ position, rotation = 0, w = 1.8, d = 0.7, h = 1.05, 
 }
 
 /** A bar stool: blue steel legs with a foot rail and a square oak seat. */
-export function Stool({ position, rotation = 0, h = 0.75 }: Placed & { h?: number }) {
+export function Stool({ position, rotation = 0, h = 0.75, frame = "cobalt" }: Placed & { h?: number; frame?: FrameColor }) {
   const s = 0.36;
-  const m = flat("cobalt");
+  const m = flat(frame);
   const x = s / 2 - STEEL / 2;
   return (
     <group position={position} rotation={[0, rotation, 0]}>

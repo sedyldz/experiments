@@ -42,18 +42,18 @@ export function Space() {
       {/* Floor slab. Its top sits at y = 0. */}
       <Box size={[width + 2 * t, floorThickness, depth + 2 * t]} at={[0, -floorThickness / 2, 0]} m={flat("concrete")} dither shadow={false} />
 
-      {/* Back wall: pale blue, like the reference cutaway */}
-      <CutawayWall position={[0, 0, -depth / 2 - t / 2]} size={[width + 2 * t, height, t]} normal={[0, -1]} material={flat("wallBlue", 3)} />
-      {/* Right wall: cream, behind the desk row */}
-      <CutawayWall position={[width / 2 + t / 2, 0, 0]} size={[depth, height, t]} normal={[1, 0]} material={flat("cream")} />
+      {/* Back wall: white, like the rest (see the photos) */}
+      <CutawayWall position={[0, 0, -depth / 2 - t / 2]} size={[width + 2 * t, height, t]} normal={[0, -1]} material={flat("cream", 4)} />
+      {/* Right wall: behind the desk row */}
+      <CutawayWall position={[width / 2 + t / 2, 0, 0]} size={[depth, height, t]} normal={[1, 0]} material={flat("cream", 4)} />
       {/* Left wall */}
-      <CutawayWall position={[-width / 2 - t / 2, 0, 0]} size={[depth, height, t]} normal={[-1, 0]} material={flat("cream")} />
+      <CutawayWall position={[-width / 2 - t / 2, 0, 0]} size={[depth, height, t]} normal={[-1, 0]} material={flat("cream", 4)} />
       {/* Front: the glass shopfront */}
       <group position={[0, 0, depth / 2 + t / 2]}>
         <Cutaway
           normal={[0, 1]}
           full={<GlassFacade position={[0, 0, 0]} width={width + 2 * t} height={height} door={layout.facade.door} />}
-          stub={<Box size={[width + 2 * t, cutawayStubHeight, t]} at={[0, cutawayStubHeight / 2, 0]} m={flat("cobalt", 3)} shadow={false} />}
+          stub={<Box size={[width + 2 * t, cutawayStubHeight, t]} at={[0, cutawayStubHeight / 2, 0]} m={flat("cobalt", 1)} shadow={false} />}
         />
       </group>
 
@@ -64,10 +64,10 @@ export function Space() {
       </group>
 
       <group visible={floors.mezzanine}>
-        {/* The deck: a pale blue slab with a concrete top, minus the stair opening */}
+        {/* The deck: a white slab with a concrete top, minus the stair opening */}
         {deckPieces.map(([x0, x1, z0, z1]) => (
           <group key={`${x0}:${z0}`}>
-            <Box size={[x1 - x0, mz.thickness - 0.03, z1 - z0]} at={[(x0 + x1) / 2, mz.level - 0.03 - (mz.thickness - 0.03) / 2, (z0 + z1) / 2]} m={flat("wallBlue", 3)} />
+            <Box size={[x1 - x0, mz.thickness - 0.03, z1 - z0]} at={[(x0 + x1) / 2, mz.level - 0.03 - (mz.thickness - 0.03) / 2, (z0 + z1) / 2]} m={flat("cream", 3)} />
             <Box size={[x1 - x0, 0.03, z1 - z0]} at={[(x0 + x1) / 2, mz.level - 0.015, (z0 + z1) / 2]} m={flat("concrete", 3)} dither />
           </group>
         ))}
