@@ -6,6 +6,8 @@ import { useCameraControls } from "./render/useCameraControls";
 import { renderConfig } from "./render/config";
 import { Space } from "./world/Space";
 import { Hud } from "./ui/Hud";
+import { Avatars } from "./avatars/Avatars";
+import { GridBuilder, GridOverlay } from "./pathfinding/GridLayer";
 import { base } from "./palette";
 
 function Controls() {
@@ -34,6 +36,9 @@ export default function PixelWorld() {
         <Controls />
         <Lighting />
         <Space />
+        <GridBuilder />
+        <GridOverlay />
+        <Avatars />
         <PixelPipeline />
       </Canvas>
       <Hud />

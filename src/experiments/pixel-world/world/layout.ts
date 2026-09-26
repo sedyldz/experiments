@@ -1,4 +1,5 @@
 import type { Placement } from "./kit";
+import type { FloorId } from "../ui/viewStore";
 
 // Every dimension and every placement in the space, in meters. The floor
 // plan follows the owner's description, checked against the photos in
@@ -124,6 +125,9 @@ export const layout = {
   stair: {
     center: [STAIR.x, STAIR.z] as [number, number],
     radius: STAIR.radius,
+    rise: MEZZ.level,
+    sweep: -Math.PI * 1.5,
+    endAngle: HALF_PI,
     /** Ground-floor entry (in front of tread 0) and upstairs exit (past the top tread). */
     entry: [STAIR.x + STAIR.radius + 0.3, STAIR.z] as [number, number],
     exit: [STAIR.x, HOLE.z0 - 0.3] as [number, number],
@@ -131,6 +135,17 @@ export const layout = {
 
   /** The shopfront (reference/photo-shopfront.jpeg). The door is on the right. */
   facade: { door: { x: 2.2, w: 1.1 } },
+
+  /** How far the walkable ground reaches past the shopfront, onto the sidewalk. */
+  outside: 2.0,
+
+  /** Places avatars walk to and hang around at, as [x, z] on a floor. */
+  spots: {
+    coffee: { floor: "ground", at: [X0 + 1.0, Z_BACK + 0.35] },
+    outside: { floor: "ground", at: [1.4, Z1 + 1.1] },
+    kitchen: { floor: "mezzanine", at: [X1 - 0.95, -3.6] },
+    window: { floor: "mezzanine", at: [X0 + 0.95, Z0 + 0.6] },
+  } as Record<string, { floor: FloorId; at: [number, number] }>,
 
   placements: [
     // ═══ OUTSIDE (reference/photo-sidewalk.jpeg) ════════════════

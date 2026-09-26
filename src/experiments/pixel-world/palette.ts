@@ -44,6 +44,8 @@ export const palette = {
   pink: ramp(["#b8324f", "#e0587a"], 0),
   /** The rough grey cement render on the stair wall */
   render: ramp(["#474744", "#5b5a56", "#706f6a", "#8a8883"], 2),
+  /** Avatar skin tones */
+  skin: ramp(["#f3cfb1", "#e0a982", "#b97a55", "#7e4f33"], 1),
   glass: ramp(["#9fb9d6", "#c3d7ec", "#e3eef8"], 1),
 
   // Plants: lots of greens, from deep shade to backlit leaf

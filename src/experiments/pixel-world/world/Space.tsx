@@ -7,9 +7,13 @@ import { Box } from "./kit/primitives";
 import { GlassFacade } from "./kit/structure";
 import { useViewStore } from "../ui/viewStore";
 
+/**
+ * One placed kit piece. Its group is tagged with the kind and floor, so the
+ * walkable grid can find it and block the cells under it.
+ */
 function Placed({ p }: { p: Placement }) {
-  const { kind, floor: _floor, ...props } = p;
-  return createElement(kit[kind] as ComponentType<typeof props>, props);
+  const { kind, floor, ...props } = p;
+  return <group userData={{ placement: { kind, floor } }}>{createElement(kit[kind] as ComponentType<typeof props>, props)}</group>;
 }
 
 type Rect = [number, number, number, number]; // x0, x1, z0, z1

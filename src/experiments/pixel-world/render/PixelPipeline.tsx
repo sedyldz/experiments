@@ -8,6 +8,8 @@ import {
   blitFragment,
   compositeFragment,
   fullscreenVertex,
+  cutoutNormalFragment,
+  cutoutNormalVertex,
   normalFragment,
   normalVertex,
 } from "./shaders";
@@ -83,9 +85,36 @@ class NormalMaterials {
     return m;
   }
 
+  private byMap = new Map<string, THREE.ShaderMaterial>();
+
+  /** A cutout variant that keeps the source material's alpha-tested silhouette. */
+  cutout(rampId: number, source: THREE.Material & { map: THREE.Texture }): THREE.ShaderMaterial {
+    const map = source.map;
+    let m = this.byMap.get(map.uuid);
+    if (!m) {
+      m = new THREE.ShaderMaterial({
+        vertexShader: cutoutNormalVertex,
+        fragmentShader: cutoutNormalFragment,
+        uniforms: {
+          tag: { value: (rampId * 2) / 255 },
+          map: { value: map },
+          alphaTest: { value: source.alphaTest },
+          uvTransform: { value: new THREE.Matrix3() },
+        },
+        side: THREE.DoubleSide,
+      });
+      this.byMap.set(map.uuid, m);
+    }
+    map.updateMatrix();
+    m.uniforms.uvTransform.value.copy(map.matrix);
+    return m;
+  }
+
   dispose() {
     for (const m of this.byTag.values()) m.dispose();
+    for (const m of this.byMap.values()) m.dispose();
     this.byTag.clear();
+    this.byMap.clear();
   }
 }
 
@@ -284,11 +313,12 @@ export function PixelPipeline() {
       const mesh = obj as THREE.Mesh;
       if (mesh.isMesh) {
         swapped.push([mesh, mesh.material]);
-        const mat = mesh.material as THREE.Material;
-        mesh.material = res.normalMaterials.get(
-          (mat.userData?.rampId as number | undefined) ?? 0,
-          !!flags?.dither,
-        );
+        const mat = mesh.material as THREE.Material & { map?: THREE.Texture | null };
+        const rampId = (mat.userData?.rampId as number | undefined) ?? 0;
+        mesh.material =
+          mat.map && mat.alphaTest > 0
+            ? res.normalMaterials.cutout(rampId, mat as THREE.Material & { map: THREE.Texture })
+            : res.normalMaterials.get(rampId, !!flags?.dither);
       }
     });
     for (const obj of hidden) obj.visible = false;

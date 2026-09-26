@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { useViewStore } from "./viewStore";
+import { useAvatarStore } from "../avatars/store";
+import { useGridStore } from "../pathfinding/gridStore";
 
 const pixelFont = {
   fontFamily:
@@ -32,6 +34,10 @@ function Toggle({
 /** The overlay: camera and render toggles plus key hints. */
 export function Hud() {
   const s = useViewStore();
+  const autonomy = useAvatarStore((a) => a.autonomy);
+  const setAutonomy = useAvatarStore((a) => a.setAutonomy);
+  const showGrid = useGridStore((g) => g.showGrid);
+  const toggleGrid = useGridStore((g) => g.toggleGrid);
   return (
     <div
       className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 text-[#1c2130]"
@@ -44,7 +50,7 @@ export function Hud() {
         <span className="text-sm font-bold tracking-widest">
           TIO.IST PIXEL WORLD
         </span>
-        <span className="text-xs opacity-70">phase 3 · furniture + dressing</span>
+        <span className="text-xs opacity-70">phase 4 · avatars</span>
       </div>
 
       <div className="pointer-events-auto flex flex-wrap items-end gap-2">
@@ -54,6 +60,9 @@ export function Hud() {
         <span className="mx-2 h-5 w-px bg-current opacity-40" />
         <Toggle label="ground" on={s.floors.ground} onClick={() => s.toggleFloor("ground")} />
         <Toggle label="mezzanine" on={s.floors.mezzanine} onClick={() => s.toggleFloor("mezzanine")} />
+        <span className="mx-2 h-5 w-px bg-current opacity-40" />
+        <Toggle label="wander" on={autonomy} onClick={() => setAutonomy(!autonomy)} />
+        <Toggle label="grid" on={showGrid} onClick={toggleGrid} />
         <span className="mx-2 h-5 w-px bg-current opacity-40" />
         <Toggle label="⟲ Q" on={false} onClick={() => s.rotate(-1)} />
         <Toggle label="E ⟳" on={false} onClick={() => s.rotate(1)} />

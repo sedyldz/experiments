@@ -25,6 +25,37 @@ export const normalVertex = /* glsl */ `
   }
 `;
 
+// Normal pass for alpha-tested cutouts (avatar sprites, labels). It keeps the
+// same silhouette as the color pass.
+export const cutoutNormalVertex = /* glsl */ `
+  #include <common>
+  uniform mat3 uvTransform;
+  varying vec3 vViewNormal;
+  varying vec2 vUv;
+  void main() {
+    vUv = (uvTransform * vec3(uv, 1.0)).xy;
+    #include <beginnormal_vertex>
+    #include <defaultnormal_vertex>
+    #include <begin_vertex>
+    #include <project_vertex>
+    vViewNormal = normalize(transformedNormal);
+  }
+`;
+
+export const cutoutNormalFragment = /* glsl */ `
+  uniform float tag;
+  uniform sampler2D map;
+  uniform float alphaTest;
+  varying vec3 vViewNormal;
+  varying vec2 vUv;
+  void main() {
+    if (texture2D(map, vUv).a < alphaTest) discard;
+    vec3 n = normalize(vViewNormal);
+    if (!gl_FrontFacing) n = -n;
+    gl_FragColor = vec4(n * 0.5 + 0.5, tag);
+  }
+`;
+
 export const normalFragment = /* glsl */ `
   uniform float tag;
   varying vec3 vViewNormal;
