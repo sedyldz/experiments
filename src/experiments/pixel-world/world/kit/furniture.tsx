@@ -202,8 +202,9 @@ export function WallShelf({ position, rotation = 0, length = 4, depth = 0.28 }: 
 }
 
 /** A freestanding steel shelving unit with oak shelves. */
-export function ShelvingUnit({ position, rotation = 0, w = 1.0, d = 0.4, h = 2.0, shelves = 4 }: Placed & { w?: number; d?: number; h?: number; shelves?: number }) {
-  const m = flat("cobalt");
+export function ShelvingUnit({ position, rotation = 0, w = 1.0, d = 0.4, h = 2.0, shelves = 4, wood = false }: Placed & { w?: number; d?: number; h?: number; shelves?: number; wood?: boolean }) {
+  // `wood` is the all-pine kitchen rack upstairs, stacked with dishes.
+  const m = wood ? flat("pine", 1) : flat("cobalt");
   const x = w / 2 - STEEL / 2;
   const z = d / 2 - STEEL / 2;
   return (
@@ -218,7 +219,17 @@ export function ShelvingUnit({ position, rotation = 0, w = 1.0, d = 0.4, h = 2.0
       ))}
       {Array.from({ length: shelves }, (_, i) => {
         const y = 0.15 + (i / (shelves - 1)) * (h - 0.25);
-        return <Box key={i} size={[w - 0.02, 0.035, d - 0.04]} at={[0, y, 0]} m={flat("oak")} />;
+        return (
+          <group key={i}>
+            <Box size={[w - 0.02, 0.035, d - 0.04]} at={[0, y, 0]} m={wood ? flat("pine", 2) : flat("oak")} />
+            {wood && i > 0 && (
+              <>
+                <Cyl r={0.11} h={0.1} at={[-w / 4, y + 0.07, 0]} m={flat("white", 3)} shadow={false} />
+                <Cyl r={0.09} h={0.08} at={[w / 5, y + 0.06, 0.02]} m={flat(i % 2 ? "cobalt" : "mustard", 3)} shadow={false} />
+              </>
+            )}
+          </group>
+        );
       })}
     </group>
   );
@@ -285,9 +296,9 @@ export function Rug({ position, rotation = 0, w = 3, d = 2.2 }: Placed & { w?: n
 }
 
 /** A framed picture hanging on a wall. The wall is at -Z. */
-export function Frame({ position, w = 0.45, h = 0.55, art = ["wallBlue", 1] as [PaletteKey, number] }: { position: Vec3; w?: number; h?: number; art?: [PaletteKey, number] }) {
+export function Frame({ position, rotation = 0, w = 0.45, h = 0.55, art = ["wallBlue", 1] as [PaletteKey, number] }: { position: Vec3; rotation?: number; w?: number; h?: number; art?: [PaletteKey, number] }) {
   return (
-    <group position={position}>
+    <group position={position} rotation={[0, rotation, 0]}>
       <Box size={[w, h, 0.03]} at={[0, 0, 0.015]} m={flat("oak", 3)} shadow={false} />
       <Box size={[w - 0.1, h - 0.1, 0.01]} at={[0, 0, 0.032]} m={flat("white", 3)} shadow={false} />
       <Box size={[w * 0.45, h * 0.45, 0.01]} at={[0, 0, 0.038]} m={flat(art[0], art[1])} shadow={false} />

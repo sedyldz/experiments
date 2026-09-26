@@ -3,16 +3,16 @@
 export const renderConfig = {
   /**
    * The low-res buffer height the default zoom aims for. The initial integer
-   * upscale factor is picked so the buffer comes out close to this. 240 gives
-   * about 320x240 on a 4:3 window.
+   * upscale factor is picked so the buffer comes out close to this. 400 gives
+   * a 2x upscale on a typical laptop window.
    */
-  targetHeight: 240,
+  targetHeight: 400,
   /** Integer upscale bounds. Zooming steps through these. */
   minPixelScale: 1,
   maxPixelScale: 12,
 
   /** Low-res pixels per world meter. This sets the world's on-screen size. */
-  pixelsPerMeter: 20,
+  pixelsPerMeter: 30,
 
   /** The height (m) the camera looks at above the pan target, so a tall room sits centered. */
   focusHeight: 1.9,

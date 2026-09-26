@@ -1,5 +1,6 @@
 import type { PaletteKey } from "../../palette";
 import { flat } from "../materials";
+import { Cutaway } from "../CutawayWall";
 import { Box, Cyl, type Vec3 } from "./primitives";
 
 // The kitchen on the mezzanine (reference/photo-kitchen-upstairs.jpeg):
@@ -16,7 +17,7 @@ interface Placed {
  * The kitchen counter run, against a wall at -Z and running along X. It
  * ends in a white dishwasher at +X.
  */
-export function KitchenRun({ position, rotation = 0, w = 2.4, d = 0.6, h = 0.9 }: Placed & { w?: number; d?: number; h?: number }) {
+export function KitchenRun({ position, rotation = 0, w = 2.4, d = 0.6, h = 0.9, fridge = false }: Placed & { w?: number; d?: number; h?: number; fridge?: boolean }) {
   const cab = w - 0.6; // pine cabinets, then the 0.6 m dishwasher
   const x0 = -w / 2;
   const doorSeams = Math.max(1, Math.round(cab / 0.6));
@@ -56,6 +57,9 @@ export function KitchenRun({ position, rotation = 0, w = 2.4, d = 0.6, h = 0.9 }
           <Cyl key={i} r={0.035} h={0.1} at={[cab / 2 - 0.12 - i * 0.1, 0.067, 0.11]} m={flat("glass", 2)} shadow={false} />
         ))}
       </group>
+      {/* The tall white fridge past the end of the run, and a gas hob */}
+      {fridge && <Box size={[0.6, 1.75, d]} at={[w / 2 + 0.3, 0.875, d / 2]} m={flat("white", 3)} />}
+      <Box size={[0.45, 0.03, 0.4]} at={[x0 + cab + 0.3, h + 0.015, d / 2]} m={flat("charcoal", 0)} shadow={false} />
       {/* A rail with hanging utensils and a blue towel */}
       <Box size={[0.5, 0.02, 0.02]} at={[x0 + cab - 0.5, h + 0.62, 0.04]} m={flat("pine", 3)} shadow={false} />
       <Box size={[0.12, 0.3, 0.02]} at={[x0 + 0.95, h + 0.45, 0.04]} m={flat("cobalt", 3)} shadow={false} />
@@ -137,7 +141,7 @@ export function Kilim({ position, rotation = 0, w = 2.4, d = 0.9 }: Placed & { w
  * `y`). An optional doorway `door` sits `at` meters along it, with a closed
  * door leaf. Used for the upstairs toilet block.
  */
-export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door }: { from: [number, number]; to: [number, number]; y?: number; height?: number; t?: number; door?: { at: number; w: number } }) {
+export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door, cutaway }: { from: [number, number]; to: [number, number]; y?: number; height?: number; t?: number; door?: { at: number; w: number; color?: PaletteKey }; cutaway?: [number, number] }) {
   const [x0, z0] = from;
   const [x1, z1] = to;
   const len = Math.hypot(x1 - x0, z1 - z0);
@@ -149,7 +153,7 @@ export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door }: { fr
         [door.at + door.w / 2, len],
       ]
     : [[0, len]];
-  return (
+  const body = (
     <group position={[x0, y, z0]} rotation={[0, yaw, 0]}>
       {segs
         .filter(([a, b]) => b - a > 0.01)
@@ -162,11 +166,25 @@ export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door }: { fr
         <>
           {/* Header over the doorway, then the closed door leaf */}
           <Box size={[door.w, height - 2.05, t]} at={[door.at, 2.05 + (height - 2.05) / 2, 0]} m={wall} />
-          <Box size={[door.w - 0.06, 2.0, 0.04]} at={[door.at, 1.0, 0]} m={flat("white", 2)} />
+          <Box size={[door.w - 0.06, 2.0, 0.04]} at={[door.at, 1.0, 0]} m={door.color ? flat(door.color) : flat("white", 2)} />
           <Box size={[0.08, 0.03, 0.1]} at={[door.at + door.w / 2 - 0.12, 1.0, 0]} m={flat("charcoal", 1)} shadow={false} />
         </>
       )}
     </group>
+  );
+  if (!cutaway) return body;
+  // Dollhouse cutaway: when the wall faces the camera it drops to a low
+  // strip, so the room behind it can be seen.
+  return (
+    <Cutaway
+      normal={cutaway}
+      full={body}
+      stub={
+        <group position={[x0, y, z0]} rotation={[0, yaw, 0]}>
+          <Box size={[len, 0.25, t]} at={[len / 2, 0.125, 0]} m={wall} shadow={false} />
+        </group>
+      }
+    />
   );
 }
 
@@ -199,6 +217,28 @@ export function WcSign({ position, rotation = 0 }: Placed) {
     <group position={position} rotation={[0, rotation, 0]}>
       <Box size={[0.22, 0.22, 0.02]} at={[0, 0, 0.01]} m={flat("navy", 1)} shadow={false} />
       <Box size={[0.12, 0.04, 0.01]} at={[0, 0, 0.022]} m={flat("white", 3)} shadow={false} />
+    </group>
+  );
+}
+
+/** A cane-backed wooden armchair with a grey seat. It faces +Z. */
+export function ArmChair({ position, rotation = 0 }: Placed) {
+  const wood = flat("oak", 1);
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      {[
+        [-0.25, -0.22],
+        [0.25, -0.22],
+        [-0.25, 0.22],
+        [0.25, 0.22],
+      ].map(([x, z]) => (
+        <Box key={`${x}${z}`} size={[0.05, 0.42, 0.05]} at={[x, 0.21, z]} m={wood} />
+      ))}
+      <Box size={[0.58, 0.1, 0.52]} at={[0, 0.45, 0.02]} m={flat("white", 1)} />
+      <Box size={[0.54, 0.55, 0.05]} at={[0, 0.8, -0.24]} m={flat("tan", 1)} />
+      {[-0.28, 0.28].map((x) => (
+        <Box key={x} size={[0.05, 0.05, 0.5]} at={[x, 0.66, 0]} m={wood} />
+      ))}
     </group>
   );
 }
