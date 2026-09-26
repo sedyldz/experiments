@@ -131,3 +131,74 @@ export function Kilim({ position, rotation = 0, w = 2.4, d = 0.9 }: Placed & { w
     </group>
   );
 }
+
+/**
+ * A plain partition wall from `from` to `to` (x, z on the floor at height
+ * `y`). An optional doorway `door` sits `at` meters along it, with a closed
+ * door leaf. Used for the upstairs toilet block.
+ */
+export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door }: { from: [number, number]; to: [number, number]; y?: number; height?: number; t?: number; door?: { at: number; w: number } }) {
+  const [x0, z0] = from;
+  const [x1, z1] = to;
+  const len = Math.hypot(x1 - x0, z1 - z0);
+  const yaw = -Math.atan2(z1 - z0, x1 - x0);
+  const wall = flat("cream", 4);
+  const segs: [number, number][] = door
+    ? [
+        [0, door.at - door.w / 2],
+        [door.at + door.w / 2, len],
+      ]
+    : [[0, len]];
+  return (
+    <group position={[x0, y, z0]} rotation={[0, yaw, 0]}>
+      {segs
+        .filter(([a, b]) => b - a > 0.01)
+        .map(([a, b]) => (
+          <mesh key={a} position={[(a + b) / 2, height / 2, 0]} material={wall} castShadow receiveShadow userData={{ pixel: { dither: true } }}>
+            <boxGeometry args={[b - a, height, t]} />
+          </mesh>
+        ))}
+      {door && (
+        <>
+          {/* Header over the doorway, then the closed door leaf */}
+          <Box size={[door.w, height - 2.05, t]} at={[door.at, 2.05 + (height - 2.05) / 2, 0]} m={wall} />
+          <Box size={[door.w - 0.06, 2.0, 0.04]} at={[door.at, 1.0, 0]} m={flat("white", 2)} />
+          <Box size={[0.08, 0.03, 0.1]} at={[door.at + door.w / 2 - 0.12, 1.0, 0]} m={flat("charcoal", 1)} shadow={false} />
+        </>
+      )}
+    </group>
+  );
+}
+
+/** A toilet, with its back against a wall at -Z. */
+export function Toilet({ position, rotation = 0 }: Placed) {
+  const m = flat("white", 3);
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      <Box size={[0.38, 0.38, 0.16]} at={[0, 0.62, 0.1]} m={m} />
+      <Cyl r={0.19} r2={0.15} h={0.4} at={[0, 0.2, 0.4]} m={m} seg={10} />
+      <Cyl r={0.2} h={0.03} at={[0, 0.415, 0.4]} m={flat("white", 2)} seg={10} shadow={false} />
+    </group>
+  );
+}
+
+/** A small wall-hung basin with a mirror above it, on a wall at -Z. */
+export function Basin({ position, rotation = 0 }: Placed) {
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      <Box size={[0.45, 0.14, 0.36]} at={[0, 0.8, 0.18]} m={flat("white", 3)} />
+      <Box size={[0.03, 0.14, 0.03]} at={[0, 0.94, 0.05]} m={flat("white", 1)} shadow={false} />
+      <Box size={[0.4, 0.55, 0.02]} at={[0, 1.4, 0.01]} m={flat("glass", 1)} shadow={false} />
+    </group>
+  );
+}
+
+/** A small "WC" plate: a navy square with a white mark. The wall is at -Z. */
+export function WcSign({ position, rotation = 0 }: Placed) {
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      <Box size={[0.22, 0.22, 0.02]} at={[0, 0, 0.01]} m={flat("navy", 1)} shadow={false} />
+      <Box size={[0.12, 0.04, 0.01]} at={[0, 0, 0.022]} m={flat("white", 3)} shadow={false} />
+    </group>
+  );
+}

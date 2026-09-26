@@ -49,8 +49,17 @@ const SHELF = { y: 2.0, z0: 0.95, z1: 4.75 };
 const SHELF_X = X1 - 0.14; // where things stand on the wall shelf
 const onShelf = (z: number): [number, number, number] => [SHELF_X, SHELF.y + 0.025, z];
 
+/**
+ * The upstairs level is split in two. The right half is the open mezzanine
+ * (desks at the railing, the kitchen). The left half, where the stair comes
+ * up, is an enclosed toilet block.
+ */
+const MID = 0;
+/** The toilet block: the stair landing at the back, the WC in front of it. */
+const WC = { x0: X0, x1: MID, zBack: HOLE.z1, zFront: MEZZ.front };
+
 /** Upstairs desks along the railing, looking out over the double-height room. */
-const MEZZ_DESKS = [-2.55, -1.3, -0.05];
+const MEZZ_DESKS = [0.8, 2.05];
 const KITCHEN = { x: 1.95, w: 2.6, island: { x: 1.9, z: -3.6 } };
 
 const HALF_PI = Math.PI / 2;
@@ -89,8 +98,7 @@ export const layout = {
   /** Everything else, placed from the kit by name. */
   placements: [
     // ─── Structure ──────────────────────────────────────────────
-    { kind: "railing", floor: "mezzanine", from: X0, to: X1, z: MEZZ.front + 0.04, y: UP },
-    { kind: "railing", floor: "mezzanine", from: X0, to: HOLE.x1, z: HOLE.z1, y: UP, height: 0.95 },
+    { kind: "railing", floor: "mezzanine", from: MID, to: X1, z: MEZZ.front + 0.04, y: UP },
 
     // The pipe at the deck edge with the navy curtain, drawn open, beside it
     { kind: "pipe", floor: "ground", position: [NOOK.x1 + 0.05, 0, MEZZ.front + 0.02], height: H },
@@ -193,23 +201,30 @@ export const layout = {
     { kind: "metalStool", floor: "mezzanine", position: [KITCHEN.island.x - 0.85, UP, KITCHEN.island.z + 0.1] },
     { kind: "metalStool", floor: "mezzanine", position: [KITCHEN.island.x + 0.85, UP, KITCHEN.island.z - 0.1] },
     ...[-0.3, 0.3].map((dx): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [KITCHEN.island.x + dx, H, KITCHEN.island.z], drop: 1.3, style: "dome" })),
-    { kind: "frame", floor: "mezzanine", position: [-0.3, UP + 1.45, Z0], w: 0.75, h: 0.55, art: ["orange", 3] },
+    { kind: "frame", floor: "mezzanine", position: [0.25, UP + 1.45, Z0], w: 0.6, h: 0.5, art: ["orange", 3] },
     { kind: "kilim", floor: "mezzanine", position: [-0.6, UP, -4.15], rotation: HALF_PI, w: 1.6, d: 0.7 },
 
     // ─── Mezzanine: desks at the railing (reference/photo-mezzanine-desks.jpeg) ──
     ...MEZZ_DESKS.map((x): Placement => ({ kind: "desk", floor: "mezzanine", position: [x, UP, MEZZ.front - 0.45], rotation: Math.PI, w: 1.22 })),
     ...MEZZ_DESKS.map((x, i): Placement => ({ kind: "officeChair", floor: "mezzanine", position: [x + (i % 2 ? 0.1 : -0.1), UP, MEZZ.front - 1.15], rotation: i % 2 ? 0.2 : -0.15 })),
-    { kind: "laptop", floor: "mezzanine", position: [-1.3, UP + 0.75, MEZZ.front - 0.5], rotation: Math.PI },
-    { kind: "desk", floor: "mezzanine", position: [X1 - 0.35, UP, -2.0], rotation: -HALF_PI, w: 1.2 },
-    { kind: "officeChair", floor: "mezzanine", position: [X1 - 1.05, UP, -2.0], rotation: HALF_PI },
-    { kind: "palm", floor: "mezzanine", position: [X1 - 0.3, UP + 0.75, -2.4], seed: 64, upright: true, scale: 0.7, pot: "white" },
-    { kind: "palm", floor: "mezzanine", position: [0.85, UP, MEZZ.front - 0.35], seed: 62, scale: 1.2 },
+    { kind: "laptop", floor: "mezzanine", position: [MEZZ_DESKS[1], UP + 0.75, MEZZ.front - 0.5], rotation: Math.PI },
+    { kind: "palm", floor: "mezzanine", position: [MID + 0.3, UP, MEZZ.front - 0.3], seed: 62, scale: 1.1 },
+    { kind: "palm", floor: "mezzanine", position: [X1 - 0.3, UP, MEZZ.front - 0.3], seed: 64, upright: true, scale: 1.0, pot: "white" },
     // The "hello" / "world!" globes, hung out over the double-height room
-    ...[-1.9, -0.7].map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, MEZZ.front + 0.5], drop: 1.55, style: "globe", label: true })),
+    ...MEZZ_DESKS.map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, MEZZ.front + 0.5], drop: 1.55, style: "globe", label: true })),
     // Pothos baskets hung off the railing, trailing over the deck edge
-    { kind: "hangingPothos", floor: "mezzanine", position: [-2.2, UP + 1.0, MEZZ.front + 0.14], drop: 0.75, seed: 71, length: 1.3 },
-    { kind: "hangingPothos", floor: "mezzanine", position: [0.6, UP + 1.0, MEZZ.front + 0.14], drop: 0.8, seed: 72, length: 1.0 },
-    { kind: "hangingPothos", floor: "mezzanine", position: [2.4, UP + 1.0, MEZZ.front + 0.14], drop: 0.6, seed: 73, length: 1.4 },
+    { kind: "hangingPothos", floor: "mezzanine", position: [MID + 0.35, UP + 1.0, MEZZ.front + 0.14], drop: 0.8, seed: 72, length: 1.0 },
+    { kind: "hangingPothos", floor: "mezzanine", position: [2.9, UP + 1.0, MEZZ.front + 0.14], drop: 0.6, seed: 73, length: 1.4 },
+
+    // ─── Upstairs, left half: the toilet block the stair comes up into ──
+    // Its front wall faces the main room, and the side wall faces the mezzanine.
+    // The landing behind (by the stair) opens onto the mezzanine at the back.
+    { kind: "partition", floor: "mezzanine", from: [WC.x0, WC.zFront], to: [WC.x1, WC.zFront], y: UP },
+    { kind: "partition", floor: "mezzanine", from: [WC.x1, WC.zFront], to: [WC.x1, WC.zBack], y: UP },
+    { kind: "partition", floor: "mezzanine", from: [WC.x0, WC.zBack], to: [WC.x1, WC.zBack], y: UP, door: { at: 2.6, w: 0.75 } },
+    { kind: "toilet", floor: "mezzanine", position: [WC.x0 + 0.05, UP, -2.6], rotation: HALF_PI },
+    { kind: "basin", floor: "mezzanine", position: [-1.4, UP, WC.zFront - 0.05], rotation: Math.PI },
+    { kind: "wcSign", floor: "mezzanine", position: [WC.x1 + 0.05, UP + 1.6, -2.3], rotation: HALF_PI },
   ] satisfies Placement[] as Placement[],
 };
 
