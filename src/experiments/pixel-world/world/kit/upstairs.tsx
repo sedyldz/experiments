@@ -141,7 +141,7 @@ export function Kilim({ position, rotation = 0, w = 2.4, d = 0.9 }: Placed & { w
  * `y`). An optional doorway `door` sits `at` meters along it, with a closed
  * door leaf. Used for the upstairs toilet block.
  */
-export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door, cutaway }: { from: [number, number]; to: [number, number]; y?: number; height?: number; t?: number; door?: { at: number; w: number; color?: PaletteKey }; cutaway?: [number, number] }) {
+export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door, cutaway }: { from: [number, number]; to: [number, number]; y?: number; height?: number; t?: number; door?: { at: number; w: number; color?: PaletteKey; open?: boolean; h?: number }; cutaway?: [number, number] }) {
   const [x0, z0] = from;
   const [x1, z1] = to;
   const len = Math.hypot(x1 - x0, z1 - z0);
@@ -164,10 +164,14 @@ export function Partition({ from, to, y = 0, height = 2.3, t = 0.1, door, cutawa
         ))}
       {door && (
         <>
-          {/* Header over the doorway, then the closed door leaf */}
-          <Box size={[door.w, height - 2.05, t]} at={[door.at, 2.05 + (height - 2.05) / 2, 0]} m={wall} />
-          <Box size={[door.w - 0.06, 2.0, 0.04]} at={[door.at, 1.0, 0]} m={door.color ? flat(door.color) : flat("white", 2)} />
-          <Box size={[0.08, 0.03, 0.1]} at={[door.at + door.w / 2 - 0.12, 1.0, 0]} m={flat("charcoal", 1)} shadow={false} />
+          {/* Header over the opening, then (unless it's an open opening) the closed door leaf */}
+          <Box size={[door.w, height - (door.h ?? 2.05), t]} at={[door.at, (door.h ?? 2.05) + (height - (door.h ?? 2.05)) / 2, 0]} m={wall} />
+          {!door.open && (
+            <>
+              <Box size={[door.w - 0.06, 2.0, 0.04]} at={[door.at, 1.0, 0]} m={door.color ? flat(door.color) : flat("white", 2)} />
+              <Box size={[0.08, 0.03, 0.1]} at={[door.at + door.w / 2 - 0.12, 1.0, 0]} m={flat("charcoal", 1)} shadow={false} />
+            </>
+          )}
         </>
       )}
     </group>
@@ -243,23 +247,41 @@ export function ArmChair({ position, rotation = 0 }: Placed) {
   );
 }
 
-/** A three-seat sofa. It faces +Z. */
-export function Sofa({ position, rotation = 0, w = 1.9, color = "navy" as PaletteKey, shade = 3 }: Placed & { w?: number; color?: PaletteKey; shade?: number }) {
-  const m = flat(color, shade);
-  const d = 0.85;
+/**
+ * A three-seat sofa: grey upholstery in a dark wood and cane frame, with
+ * blue / yellow / lilac cushions (reference/photo-upstairs-lounge.jpeg).
+ * It faces +Z.
+ */
+export function Sofa({ position, rotation = 0, w = 1.9 }: Placed & { w?: number }) {
+  const fabric = flat("white", 1);
+  const wood = flat("oak", 0);
+  const d = 0.8;
   return (
     <group position={position} rotation={[0, rotation, 0]}>
-      <Box size={[w, 0.25, d]} at={[0, 0.2, 0]} m={m} />
+      <Box size={[w, 0.22, d]} at={[0, 0.24, 0]} m={fabric} />
       {[-1, 0, 1].map((i) => (
-        <Box key={i} size={[w / 3 - 0.06, 0.12, d - 0.25]} at={[(i * (w - 0.3)) / 3, 0.38, 0.08]} m={m} />
+        <Box key={i} size={[w / 3 - 0.06, 0.1, d - 0.22]} at={[(i * (w - 0.25)) / 3, 0.4, 0.08]} m={fabric} />
       ))}
-      <Box size={[w, 0.45, 0.2]} at={[0, 0.55, -d / 2 + 0.1]} m={m} />
+      <Box size={[w - 0.1, 0.45, 0.14]} at={[0, 0.6, -d / 2 + 0.1]} m={fabric} />
+      <Box size={[w + 0.04, 0.06, 0.12]} at={[0, 0.85, -d / 2 + 0.08]} m={wood} />
       {[-1, 1].map((sx) => (
-        <Box key={sx} size={[0.16, 0.5, d]} at={[(sx * (w - 0.16)) / 2, 0.3, 0]} m={m} />
+        <group key={sx}>
+          <Box size={[0.08, 0.4, d]} at={[(sx * (w - 0.04)) / 2, 0.42, 0]} m={wood} />
+          <Box size={[0.06, 0.13, 0.06]} at={[(sx * (w - 0.1)) / 2, 0.065, d / 2 - 0.08]} m={wood} />
+        </group>
       ))}
-      {[-1, 1].map((sx) => (
-        <Box key={sx} size={[0.05, 0.08, 0.05]} at={[(sx * (w - 0.2)) / 2, 0.04, 0.3]} m={flat("oak", 1)} shadow={false} />
-      ))}
+      <Box size={[0.4, 0.3, 0.12]} at={[-w / 2 + 0.35, 0.6, -0.18]} rot={[-0.3, 0.2, 0]} m={flat("cobalt", 3)} />
+      <Box size={[0.4, 0.3, 0.12]} at={[w / 2 - 0.35, 0.6, -0.18]} rot={[-0.3, -0.2, 0]} m={flat("mustard", 3)} />
+    </group>
+  );
+}
+
+/** A wall-mounted air conditioner. The wall is at -Z. */
+export function AirCon({ position, rotation = 0 }: Placed) {
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      <Box size={[0.9, 0.3, 0.22]} at={[0, 0, 0.11]} m={flat("white", 3)} />
+      <Box size={[0.8, 0.03, 0.02]} at={[0, -0.1, 0.225]} m={flat("charcoal", 2)} shadow={false} />
     </group>
   );
 }

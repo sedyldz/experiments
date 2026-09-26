@@ -21,5 +21,10 @@ The reference art for the tio.ist Pixel World:
 - `photo-kitchen-upstairs.jpeg`: the kitchen on the mezzanine.
 - `photo-shopfront.jpeg`, `photo-street.jpeg`: outside. The street isn't
   modeled, but the shopfront details are.
+- `photo-entrance-view.jpeg`: from the entrance looking back. The upper
+  floor's white front wall with the half-width balcony, the pod curtain and
+  pipe, the standing desks, and the meeting room at the back.
+- `photo-upstairs-lounge.jpeg`, `photo-upstairs-curtain.png`,
+  `photo-kitchen-upstairs-2.png`: the kitchen / lounge upstairs.
 - `IMG_8310.jpeg` (not supplied yet): a mood reference for the cutaway framing
   and halftone texture.
