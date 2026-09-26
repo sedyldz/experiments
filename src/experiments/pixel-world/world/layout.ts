@@ -135,9 +135,9 @@ export const layout = {
   placements: [
     // ═══ OUTSIDE (reference/photo-sidewalk.jpeg) ════════════════
     // A strip of pavement, the wooden bench on blue legs under the window, and the blue A-frame sign
-    { kind: "sidewalk", floor: "ground", position: [0, 0, Z1 + 0.2 + 0.8], w: W + 0.4, d: 1.6 },
-    { kind: "highTable", floor: "ground", position: [-1.7, 0, Z1 + 0.5], w: 1.7, d: 0.38, h: 0.46, shelf: false },
-    { kind: "aFrameSign", floor: "ground", position: [0.9, 0, Z1 + 1.25], rotation: 0.35 },
+    { kind: "sidewalk", floor: "ground", position: [0, 0, Z1 + 0.2 + 1.0], w: W + 0.4, d: 2.0 },
+    { kind: "highTable", floor: "ground", position: [-1.6, 0, Z1 + 0.5], w: 1.7, d: 0.38, h: 0.46, shelf: false },
+    { kind: "aFrameSign", floor: "ground", position: [0.6, 0, Z1 + 1.6], rotation: 0.35 },
 
     // ═══ ENTRANCE (double height) ═══════════════════════════════
     // Left: two tables at the window, facing the street

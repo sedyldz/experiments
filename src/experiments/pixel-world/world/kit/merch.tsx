@@ -222,11 +222,30 @@ export function AFrameSign({ position, rotation = 0 }: Placed) {
   );
 }
 
-/** A strip of grey paving in front of the shopfront. `position` is its center at ground level. */
+/**
+ * The sidewalk in front of the shopfront: grey square paving (a slightly
+ * darker checker every other tile) and a curb along the street edge.
+ * `position` is its center at ground level. The street is at +Z.
+ */
 export function Sidewalk({ position, w, d }: { position: Vec3; w: number; d: number }) {
+  const tile = 0.4;
+  const cols = Math.round(w / tile);
+  const rows = Math.round((d - 0.2) / tile);
   return (
-    <mesh position={[position[0], position[1] - 0.06, position[2]]} material={flat("concrete", 2)} receiveShadow userData={{ pixel: { dither: true } }}>
-      <boxGeometry args={[w, 0.12, d]} />
-    </mesh>
+    <group position={position}>
+      <mesh position={[0, -0.06, 0]} material={flat("concrete", 2)} receiveShadow userData={{ pixel: { dither: true } }}>
+        <boxGeometry args={[w, 0.12, d]} />
+      </mesh>
+      {Array.from({ length: cols * rows }, (_, k) => {
+        const c = k % cols;
+        const r = Math.floor(k / cols);
+        if ((c + r) % 2 === 0) return null;
+        return (
+          <Box key={k} size={[tile - 0.02, 0.005, tile - 0.02]} at={[-w / 2 + (c + 0.5) * (w / cols), 0.003, -d / 2 + (r + 0.5) * tile]} m={flat("concrete", 1)} shadow={false} />
+        );
+      })}
+      {/* The curb */}
+      <Box size={[w, 0.16, 0.2]} at={[0, -0.02, d / 2 - 0.1]} m={flat("concrete", 3)} />
+    </group>
   );
 }

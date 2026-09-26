@@ -182,39 +182,68 @@ function GlassPane({ size, at }: { size: Vec3; at: Vec3 }) {
 }
 
 /**
- * The shopfront (reference/photo-shopfront.jpeg): heavy dark navy frames
- * around big panes, a solid navy lower panel on a cobalt tiled plinth, a
- * door with a solid lower half, and the blue neon "tio" sign glowing in the
- * upper pane. It runs along X, centered, with the room behind it at -Z.
+ * The shopfront (reference/photo-shopfront.jpeg, photo-sidewalk.jpeg), from
+ * the bottom up:
+ *   - a cobalt tiled plinth under a solid navy lower panel
+ *   - the big shop windows in heavy navy frames, and the door on the right
+ *     with a solid lower half
+ *   - the building's beige concrete band
+ *   - a row of clerestory windows in thin dark frames, which light the
+ *     double-height room
+ * The blue neon "tio" glows in the pane above the door. It runs along X,
+ * centered, with the room behind it at -Z.
  */
 export function GlassFacade({ position, rotation = 0, width, height, door = { x: -0.6, w: 1.1 } }: { position: Vec3; rotation?: number; width: number; height: number; door?: { x: number; w: number } }) {
-  const frame = flat("navy", 0);
-  const sill = 0.75; // top of the solid lower panel
-  const transom = 2.55;
-  const cols = [-width / 2, -width / 2 + (door.x - door.w / 2 + width / 2) / 2, door.x - door.w / 2, door.x + door.w / 2, width / 2];
+  const navy = flat("navy", 0);
+  const thin = flat("charcoal", 0);
+  const band = flat("cream", 2);
+  const x0 = -width / 2;
+  const x1 = width / 2;
+  const sill = 0.8; // top of the solid lower panel
+  const shopTop = 2.95; // top of the shop windows and door
+  const bandTop = 3.45; // top of the concrete band
+  const transom = 2.3; // splits the shop panes and the door into lower and upper lights
+  const doorL = door.x - door.w / 2;
+  const doorR = door.x + door.w / 2;
+  // Two shop panes left of the door: a big one, then a narrower one
+  const split = x0 + (doorL - x0) * 0.58;
+  const shopMullions = [x0, split, doorL, doorR, x1];
+  const clerestory = Math.max(2, Math.round(width / 1.15));
+  const T = 0.09; // heavy shop frame
   return (
     <group position={position} rotation={[0, rotation, 0]}>
-      {/* The glazing */}
-      <GlassPane size={[width, height - sill, 0.02]} at={[0, sill + (height - sill) / 2, 0]} />
-      {/* The solid lower panel and the tiled plinth */}
-      <Box size={[width, sill, 0.1]} at={[0, sill / 2, 0]} m={frame} />
-      <Box size={[width + 0.02, 0.28, 0.12]} at={[0, 0.14, 0.01]} m={flat("cobalt", 1)} />
-      {/* Mullions and transoms */}
-      {cols.map((x) => (
-        <Box key={x} size={[0.12, height, 0.12]} at={[x, height / 2, 0]} m={frame} />
+      {/* Plinth and solid lower panel (not under the door) */}
+      <Box size={[doorL - x0, 0.28, 0.14]} at={[(x0 + doorL) / 2, 0.14, 0.02]} m={flat("cobalt", 1)} />
+      <Box size={[doorL - x0, sill - 0.28, 0.1]} at={[(x0 + doorL) / 2, 0.28 + (sill - 0.28) / 2, 0]} m={navy} />
+      {/* Shop windows */}
+      <GlassPane size={[doorL - x0, shopTop - sill, 0.02]} at={[(x0 + doorL) / 2, sill + (shopTop - sill) / 2, 0]} />
+      {shopMullions.map((x) => (
+        <Box key={x} size={[T, shopTop, T + 0.02]} at={[x, shopTop / 2, 0]} m={navy} />
       ))}
-      {[sill, transom, height - 0.06].map((y) => (
-        <Box key={y} size={[width, 0.12, 0.12]} at={[0, y, 0]} m={frame} />
-      ))}
-      {/* The door: a solid lower half and a glass upper half */}
-      <group position={[door.x, 0, 0.02]}>
-        <Box size={[door.w - 0.1, 1.1, 0.06]} at={[0, 0.55, 0]} m={frame} />
-        <Box size={[0.05, 0.2, 0.08]} at={[-door.w / 2 + 0.15, 1.2, 0.03]} m={flat("charcoal", 1)} shadow={false} />
+      <Box size={[doorL - x0, T, T]} at={[(x0 + doorL) / 2, sill, 0]} m={navy} />
+      <Box size={[width, T, T]} at={[0, transom, 0]} m={navy} />
+      {/* The door: a solid lower half, a glass upper half, a handle, and a step */}
+      <group position={[door.x, 0, 0]}>
+        <Box size={[door.w - T, 1.1, 0.06]} at={[0, 0.55, 0]} m={navy} />
+        <GlassPane size={[door.w - T, transom - 1.1, 0.02]} at={[0, 1.1 + (transom - 1.1) / 2, 0]} />
+        <Box size={[door.w - T, 0.07, 0.07]} at={[0, 1.1, 0]} m={navy} />
+        <Box size={[0.05, 0.22, 0.05]} at={[-door.w / 2 + 0.18, 1.2, 0.05]} m={flat("charcoal", 2)} shadow={false} />
+        <Box size={[door.w + 0.2, 0.12, 0.35]} at={[0, 0.06, 0.25]} m={flat("concrete", 1)} />
       </group>
-      {/* The blue neon "tio" sign in the upper pane */}
-      <group position={[door.x - 0.2, transom + 0.6, -0.08]} rotation={[0, Math.PI, 0]}>
+      {/* Upper lights over the shop panes and the door */}
+      <GlassPane size={[width, shopTop - transom, 0.02]} at={[0, transom + (shopTop - transom) / 2, 0]} />
+      <group position={[door.x, transom + 0.33, -0.08]} rotation={[0, Math.PI, 0]}>
         <LogoSign position={[0, 0, 0]} neon />
       </group>
+      {/* The building's concrete band */}
+      <Box size={[width + 0.1, bandTop - shopTop, 0.22]} at={[0, (shopTop + bandTop) / 2, 0.04]} m={band} />
+      {/* Clerestory windows in thin dark frames */}
+      <GlassPane size={[width, height - bandTop - 0.2, 0.02]} at={[0, bandTop + (height - bandTop - 0.2) / 2, 0]} />
+      {Array.from({ length: clerestory + 1 }, (_, i) => (
+        <Box key={i} size={[0.05, height - bandTop - 0.2, 0.06]} at={[x0 + (i / clerestory) * width, bandTop + (height - bandTop - 0.2) / 2, 0]} m={thin} />
+      ))}
+      <Box size={[width, 0.05, 0.06]} at={[0, bandTop + 0.03, 0]} m={thin} />
+      <Box size={[width + 0.1, 0.2, 0.22]} at={[0, height - 0.1, 0.04]} m={band} />
     </group>
   );
 }
