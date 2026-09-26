@@ -238,11 +238,12 @@ export const layout = {
     // On the right: the kitchen counter along the right wall, with the fridge at its front end
     { kind: "kitchenRun", floor: "mezzanine", position: [X1, UP, -4.2], rotation: -HALF_PI, w: 2.2, fridge: true },
     // In the middle: the table
-    { kind: "kitchenIsland", floor: "mezzanine", position: [0.5, UP, -4.2], w: 1.3, d: 0.7 },
-    { kind: "metalStool", floor: "mezzanine", position: [-0.3, UP, -4.1] },
-    { kind: "metalStool", floor: "mezzanine", position: [1.3, UP, -4.3] },
-    ...[0.2, 0.8].map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, -4.2], drop: 1.3, style: "dome" })),
-    { kind: "frame", floor: "mezzanine", position: [0.5, UP + 1.5, Z0], w: 0.75, h: 0.55, art: ["orange", 3] },
+    // The table runs parallel to the counter, with its stools on the room side
+    { kind: "kitchenIsland", floor: "mezzanine", position: [1.55, UP, -4.2], rotation: HALF_PI, w: 1.3, d: 0.7 },
+    { kind: "metalStool", floor: "mezzanine", position: [0.85, UP, -4.5] },
+    { kind: "metalStool", floor: "mezzanine", position: [0.85, UP, -3.85] },
+    ...[-4.5, -3.9].map((z): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [1.55, H, z], drop: 1.3, style: "dome" })),
+    { kind: "frame", floor: "mezzanine", position: [1.2, UP + 1.5, Z0], w: 0.75, h: 0.55, art: ["orange", 3] },
     { kind: "shelvingUnit", floor: "mezzanine", position: [X1 - 0.22, UP, -2.15], rotation: -HALF_PI, w: 0.7, d: 0.35, h: 1.6, wood: true },
 
     // ── The toilet, with its yellow door facing the kitchen ──
