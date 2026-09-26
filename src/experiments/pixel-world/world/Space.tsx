@@ -1,6 +1,6 @@
 import { createElement, type ComponentType } from "react";
 import { layout } from "./layout";
-import { Cutaway, CutawayWall } from "./CutawayWall";
+import { CutawayWall } from "./CutawayWall";
 import { flat } from "./materials";
 import { kit, type Placement } from "./kit";
 import { Box } from "./kit/primitives";
@@ -37,7 +37,7 @@ function deckMinusHole(): Rect[] {
 
 /** The whole tio.ist space: the shell, the mezzanine, and every placement from layout.ts. */
 export function Space() {
-  const { width, depth, height, wallThickness: t, floorThickness, cutawayStubHeight } = layout.room;
+  const { width, depth, height, wallThickness: t, floorThickness } = layout.room;
   const mz = layout.mezzanine;
   const floors = useViewStore((s) => s.floors);
 
@@ -56,14 +56,9 @@ export function Space() {
       <CutawayWall position={[width / 2 + t / 2, 0, 0]} size={[depth, height, t]} normal={[1, 0]} material={flat("cream", 4)} />
       {/* Left wall */}
       <CutawayWall position={[-width / 2 - t / 2, 0, 0]} size={[depth, height, t]} normal={[-1, 0]} material={flat("cream", 4)} />
-      {/* Front: the glass shopfront */}
-      <group position={[0, 0, depth / 2 + t / 2]}>
-        <Cutaway
-          normal={[0, 1]}
-          full={<GlassFacade position={[0, 0, 0]} width={width + 2 * t} height={height} door={layout.facade.door} />}
-          stub={<Box size={[width + 2 * t, cutawayStubHeight, t]} at={[0, cutawayStubHeight / 2, 0]} m={flat("cobalt", 1)} shadow={false} />}
-        />
-      </group>
+      {/* Front: the glass shopfront. It is never cut away: the entrance door
+          and the frames always show, and you look in through the glass. */}
+      <GlassFacade position={[0, 0, depth / 2 + t / 2]} width={width + 2 * t} height={height} door={layout.facade.door} />
 
       <group visible={floors.ground}>
         {ground.map((p, i) => (

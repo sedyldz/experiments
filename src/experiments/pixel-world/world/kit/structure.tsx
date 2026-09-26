@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { flat, glow } from "../materials";
+import { flat, glow, windowGlass } from "../materials";
 import { Bar, Box, Cyl, Wire, type Vec3 } from "./primitives";
 import { LogoSign } from "./merch";
 
@@ -172,6 +172,15 @@ export function Doorway({ position, w = 0.95, h = 2.15, open = true }: { positio
   );
 }
 
+/** A see-through glass pane. It casts no shadow and draws no outline. */
+function GlassPane({ size, at }: { size: Vec3; at: Vec3 }) {
+  return (
+    <mesh position={at} material={windowGlass()} userData={{ pixel: { skipNormal: true } }} renderOrder={1}>
+      <boxGeometry args={size} />
+    </mesh>
+  );
+}
+
 /**
  * The shopfront (reference/photo-shopfront.jpeg): heavy dark navy frames
  * around big panes, a solid navy lower panel on a cobalt tiled plinth, a
@@ -186,7 +195,7 @@ export function GlassFacade({ position, rotation = 0, width, height, door = { x:
   return (
     <group position={position} rotation={[0, rotation, 0]}>
       {/* The glazing */}
-      <Box size={[width, height - sill, 0.03]} at={[0, sill + (height - sill) / 2, 0]} m={flat("glass")} shadow={false} />
+      <GlassPane size={[width, height - sill, 0.02]} at={[0, sill + (height - sill) / 2, 0]} />
       {/* The solid lower panel and the tiled plinth */}
       <Box size={[width, sill, 0.1]} at={[0, sill / 2, 0]} m={frame} />
       <Box size={[width + 0.02, 0.28, 0.12]} at={[0, 0.14, 0.01]} m={flat("cobalt", 1)} />

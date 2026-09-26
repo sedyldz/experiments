@@ -50,6 +50,23 @@ export function foliage(key: PaletteKey = "green"): THREE.MeshLambertMaterial {
   });
 }
 
+/**
+ * See-through window glass: a faint pale-blue tint over whatever is behind
+ * it. It writes no depth and sits out the normal pass (see GlassPane), so it
+ * draws no outline and the thing behind keeps its own palette ramp.
+ */
+export function windowGlass(): THREE.MeshLambertMaterial {
+  return cached("windowGlass", () => {
+    const m = new THREE.MeshLambertMaterial({
+      color: palette.glass.ramp[2],
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+    });
+    return m;
+  });
+}
+
 /** Unlit material for light sources (lamp globes, fluorescent tubes). */
 export function glow(key: PaletteKey = "warmLight", shadeIndex?: number): THREE.MeshBasicMaterial {
   const color = shadeOf(key, shadeIndex);
