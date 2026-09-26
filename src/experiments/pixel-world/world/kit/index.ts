@@ -19,7 +19,7 @@ import { CoffeeStation, FireExtinguisher, FloorPlate, FuseBox, TrashBin, WallPan
 import { BranchPlant, Climber, HangingPothos, Monstera, Palm, RubberPlant, Schefflera, ShelfTrailer, SmallTree } from "./plants";
 import { LogoSign, MerchWall, Mirror, PosterBoard } from "./merch";
 import { ArmChair, Basin, Kilim, KitchenIsland, KitchenRun, MetalStool, Partition, Toilet, WcSign } from "./upstairs";
-import { Curtain, Doorway, LinearLamp, PendantLamp, Pipe, Railing, SpiralStair, Stair } from "./structure";
+import { Curtain, Doorway, LinearLamp, PendantLamp, Pipe, Railing, Slab, SpiralStair, Stair } from "./structure";
 
 /** Every kit component that `layout.ts` can place, by name. */
 export const kit = {
@@ -74,6 +74,7 @@ export const kit = {
   basin: Basin,
   wcSign: WcSign,
   armChair: ArmChair,
+  slab: Slab,
 };
 
 export type Kit = typeof kit;

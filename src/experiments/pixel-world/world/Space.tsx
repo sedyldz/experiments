@@ -12,18 +12,17 @@ function Placed({ p }: { p: Placement }) {
   return createElement(kit[kind] as ComponentType<typeof props>, props);
 }
 
-/**
- * The deck as rectangles [x0, x1, z0, z1] around the stair opening, which
- * sits against the back wall.
- */
+/** The deck as rectangles [x0, x1, z0, z1] around the stair opening. */
 function deckMinusHole(): [number, number, number, number][] {
   const { width } = layout.room;
   const { zFrom, zTo, hole } = layout.mezzanine;
   const X0 = -width / 2;
   const X1 = width / 2;
-  const pieces: [number, number, number, number][] = [[X0, X1, hole.z1, zTo]];
-  if (hole.x0 > X0) pieces.push([X0, hole.x0, zFrom, hole.z1]);
-  if (hole.x1 < X1) pieces.push([hole.x1, X1, zFrom, hole.z1]);
+  const pieces: [number, number, number, number][] = [];
+  if (hole.z1 < zTo) pieces.push([X0, X1, hole.z1, zTo]);
+  if (hole.z0 > zFrom) pieces.push([X0, X1, zFrom, hole.z0]);
+  if (hole.x0 > X0) pieces.push([X0, hole.x0, hole.z0, hole.z1]);
+  if (hole.x1 < X1) pieces.push([hole.x1, X1, hole.z0, hole.z1]);
   return pieces;
 }
 

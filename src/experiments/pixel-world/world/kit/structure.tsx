@@ -258,3 +258,12 @@ export function LinearLamp({ position, rotation = 0, length = 3, drop = 0.6 }: {
     </group>
   );
 }
+
+/**
+ * A plain slab, optionally tilted around X (for example the sloped
+ * underside of the building's stair above the meeting pod). `position` is
+ * its center.
+ */
+export function Slab({ position, size, tilt = 0, color = "cream", shade = 4 }: { position: Vec3; size: Vec3; tilt?: number; color?: "cream" | "white" | "concrete"; shade?: number }) {
+  return <Box size={size} at={position} rot={[tilt, 0, 0]} m={flat(color, shade)} />;
+}

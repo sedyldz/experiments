@@ -1,69 +1,80 @@
 import type { Placement } from "./kit";
 
 // Every dimension and every placement in the space, in meters. The floor
-// plan is pieced together from the illustrations and photos in /reference.
-// The arrangement follows them, but the dimensions are estimates until a real
-// survey arrives. Re-measuring the space should only mean editing this file.
+// plan follows the owner's description, checked against the photos in
+// /reference. The dimensions are still estimates until a real survey
+// arrives, and re-measuring should only mean editing this file.
+//
+// Walking in from the street, the space has three sections:
+//   ENTRANCE (front, double height): the door is on the right of the
+//     shopfront. Two window tables on the left, three tables in a row on the
+//     right wall (the plant shelf above them), the merch shelves on the left
+//     wall with the big host table in front, and the meeting pod behind it,
+//     under the building's stair.
+//   MIDDLE: two standing desks on the left, three tables on the right.
+//   BACK (deeper than the middle): the big meeting table, two benches on its
+//     front side and four orange chairs on the back.
+// The yellow spiral stair and the coffee corner are on the left, between the
+// middle and the back. The upper level spans the middle and back sections.
+// Its desks look out over the double-height entrance, and the kitchen and
+// toilet sit behind them.
 //
 // Coordinates: the origin is the center of the ground floor.
-//   +X  toward the right long wall (the desk row with the wall shelf)
-//   -X  toward the left long wall (the merch wall, a high table)
-//   -Z  toward the back wall. Upstairs: the kitchen + toilet (left, where
-//       the stair comes up) and the open mezzanine desks (right). Below: the
-//       stair nook and the yellow tables.
-//   +Z  toward the glass shopfront (the entrance)
+//   +X  toward the right wall, -X toward the left wall
+//   +Z  toward the shopfront, -Z toward the back wall
 //   +Y  up
 
 const W = 6.5; // interior width (X)
-const D = 10; // interior depth (Z)
 const H = 5.4; // floor to ceiling
+
+// Section boundaries along Z (the front is +Z)
+const ENTRANCE_DEPTH = 4.2;
+const MIDDLE_DEPTH = 3.0;
+const BACK_DEPTH = 3.8;
+const D = ENTRANCE_DEPTH + MIDDLE_DEPTH + BACK_DEPTH;
+
 const X0 = -W / 2;
 const X1 = W / 2;
-const Z0 = -D / 2;
-const Z1 = D / 2;
+const Z0 = -D / 2; // back wall
+const Z1 = D / 2; // shopfront
+const Z_MID = Z1 - ENTRANCE_DEPTH; // entrance | middle
+const Z_BACK = Z_MID - MIDDLE_DEPTH; // middle | back
 
-/** The upper level along the back wall. */
+/** The upper level covers the middle and back sections. */
 const MEZZ = {
-  front: -1.2, // z of the open edge, where the railing is
-  level: 2.7, // top of the deck
+  front: Z_MID, // the open edge with the railing, overlooking the entrance
+  level: 2.7,
   thickness: 0.3,
 };
-const UNDER = MEZZ.level - MEZZ.thickness; // headroom under the mezzanine
+const UNDER = MEZZ.level - MEZZ.thickness;
 const UP = MEZZ.level;
 
 /**
- * The yellow spiral stair at the back, in the corner nook under the deck
- * (reference/photo-spiral-stair.jpeg). It rises through an opening in the
- * deck. It makes one full clockwise turn: you step on facing +Z (away from
- * the back wall) and step off facing +Z too, into the kitchen.
+ * The yellow spiral stair, on the left between the middle and back sections
+ * (reference/photo-spiral-stair.jpeg). You step on facing the front and step
+ * off upstairs facing +X, toward the kitchen.
  */
-const STAIR = { x: -1.85, z: Z0 + 0.82, radius: 0.72 };
-/** The opening in the deck the stair comes up through. */
-const HOLE = { x0: X0, x1: -1.05, z0: Z0, z1: Z0 + 1.65 };
-/** The nook under the deck around the stair: grey render walls, coffee counter, duct. */
-const NOOK = { x0: X0, x1: -0.45 };
+const STAIR = { x: X0 + 1.1, z: Z_BACK - 0.95, radius: 0.72 };
+const HOLE = { x0: X0, x1: STAIR.x + 0.95, z0: STAIR.z - 1.0, z1: STAIR.z + 1.0 };
 
-const DESK_ROW = { x: X1 - 0.35, z0: 0.85, count: 3, w: 1.2 };
-const deskZ = (i: number) => DESK_ROW.z0 + DESK_ROW.w * (i + 0.5);
+/** The meeting pod: on the left behind the host table, under the building's stair. */
+const POD = { x0: X0, x1: X0 + 1.6, z0: Z_MID - 0.6, z1: Z_MID + 0.7, h: 2.3 };
 
-const SHELF = { y: 2.0, z0: 0.95, z1: 4.75 };
-const SHELF_X = X1 - 0.14; // where things stand on the wall shelf
+// The desk row with the plant shelf above it (entrance, right wall)
+const ENTRY_ROW = { x: X1 - 0.35, z0: Z_MID + 0.6, w: 1.15 };
+const entryDeskZ = (i: number) => ENTRY_ROW.z0 + ENTRY_ROW.w * (i + 0.5);
+const SHELF = { y: 2.2, z0: Z_MID + 0.6, z1: Z1 - 0.25 };
+const SHELF_X = X1 - 0.14;
 const onShelf = (z: number): [number, number, number] => [SHELF_X, SHELF.y + 0.025, z];
 
-/**
- * The upstairs level is split in two. The left half, where the stair comes
- * up, is the kitchen (reference/photo-kitchen-upstairs*.{jpeg,png}): a white
- * wall toward the main room, with the toilet behind a yellow door at the
- * back. A navy curtain divides it from the right half, the open mezzanine
- * with the desks at the railing.
- */
-const MID = 0;
-const KITCHEN = { x0: X0, x1: MID, zFront: MEZZ.front };
-/** The toilet: a small box at the back of the kitchen, beside the stair opening. */
-const WC = { x0: HOLE.x1, x1: MID, zFront: -3.9 };
+// The middle section's desk row (right wall, under the upper level)
+const MID_ROW = { x: X1 - 0.35, z0: Z_BACK + 0.1, w: 0.95 };
+const midDeskZ = (i: number) => MID_ROW.z0 + MID_ROW.w * (i + 0.5);
 
-/** Upstairs desks along the railing, looking out over the double-height room. */
-const MEZZ_DESKS = [0.8, 2.05];
+/** Upstairs zones. The kitchen and toilet are behind a curtain line, and the desks are at the railing. */
+const UP_CURTAIN_Z = HOLE.z1;
+const WC = { x0: X0, x1: X0 + 1.65, zFront: HOLE.z0 };
+const RAIL_DESKS = [-0.55, 0.7];
 
 const HALF_PI = Math.PI / 2;
 
@@ -78,6 +89,8 @@ export const layout = {
     cutawayStubHeight: 0.25,
   },
 
+  sections: { entrance: [Z_MID, Z1], middle: [Z_BACK, Z_MID], back: [Z0, Z_BACK] } as Record<string, [number, number]>,
+
   mezzanine: {
     zFrom: Z0,
     zTo: MEZZ.front,
@@ -90,150 +103,133 @@ export const layout = {
   stair: {
     center: [STAIR.x, STAIR.z] as [number, number],
     radius: STAIR.radius,
-    /** Ground-floor entry (in front of tread 0) and deck exit (past the top tread). */
+    /** Ground-floor entry (in front of tread 0) and upstairs exit (past the top tread). */
     entry: [STAIR.x, STAIR.z + STAIR.radius + 0.3] as [number, number],
-    exit: [STAIR.x, HOLE.z1 + 0.3] as [number, number],
+    exit: [HOLE.x1 + 0.3, STAIR.z] as [number, number],
   },
 
-  /** The shopfront on the +Z wall (reference/photo-shopfront.jpeg). The door is on the right. */
-  facade: { door: { x: X1 - 0.75, w: 1.1 } },
+  /** The shopfront (reference/photo-shopfront.jpeg). The door is on the right. */
+  facade: { door: { x: 2.2, w: 1.1 } },
 
-  /** Everything else, placed from the kit by name. */
   placements: [
-    // ─── Structure ──────────────────────────────────────────────
-    { kind: "railing", floor: "mezzanine", from: MID, to: X1, z: MEZZ.front + 0.04, y: UP },
+    // ═══ ENTRANCE (double height) ═══════════════════════════════
+    // Left: two tables at the window, facing the street
+    ...[-2.6, -1.35].map((x): Placement => ({ kind: "desk", floor: "ground", position: [x, 0, Z1 - 0.4], rotation: Math.PI, w: 1.2 })),
+    ...[-2.6, -1.35].map((x, i): Placement => ({ kind: "officeChair", floor: "ground", position: [x, 0, Z1 - 1.1], rotation: i ? 0.15 : -0.2 })),
+    { kind: "laptop", floor: "ground", position: [-1.35, 0.75, Z1 - 0.45], rotation: Math.PI },
 
-    // The pipe at the deck edge with the navy curtain, drawn open, beside it
-    { kind: "pipe", floor: "ground", position: [NOOK.x1 + 0.05, 0, MEZZ.front + 0.02], height: H },
-    { kind: "curtain", floor: "ground", position: [NOOK.x1 - 0.6, 0, MEZZ.front + 0.06], width: 0.55, height: UNDER - 0.03, pleat: 0.2 },
+    // Left wall: the merch shelves (reference/photo-merch-wall.jpeg)
+    { kind: "merchWall", floor: "ground", position: [X0, 0, Z1 - 0.8], rotation: HALF_PI },
+    { kind: "hangingPothos", floor: "ground", position: [X0 + 0.5, 3.1, Z1 - 0.9], drop: 0.5, seed: 19, length: 0.9, color: "purple", pot: "charcoal" },
+    // The big host table in front of the shelves
+    { kind: "desk", floor: "ground", position: [-1.85, 0, Z_MID + 2.0], rotation: HALF_PI, w: 1.8, d: 0.85 },
+    { kind: "officeChair", floor: "ground", position: [-2.5, 0, Z_MID + 2.0], rotation: HALF_PI },
+    { kind: "laptop", floor: "ground", position: [-1.9, 0.75, Z_MID + 2.3], rotation: HALF_PI },
 
-    { kind: "linearLamp", floor: "ground", position: [0.3, H, 2.3], rotation: HALF_PI, length: 2.8, drop: 1.1 },
+    // The meeting pod, behind the host table, under the building's stair.
+    // The mustard pipe marks its corner, and the navy curtain is its door.
+    { kind: "partition", floor: "ground", from: [POD.x0, POD.z1], to: [POD.x1, POD.z1], height: POD.h, cutaway: [0, 1] },
+    { kind: "partition", floor: "ground", from: [POD.x0, POD.z0], to: [POD.x1, POD.z0], height: POD.h },
+    { kind: "curtain", floor: "ground", position: [POD.x1, 0, POD.z1 - 0.05], rotation: HALF_PI, width: POD.z1 - POD.z0 - 0.1, height: POD.h - 0.05, pleat: 0.24 },
+    { kind: "slab", floor: "ground", position: [(POD.x0 + POD.x1) / 2, POD.h + 0.2, (POD.z0 + POD.z1) / 2], size: [POD.x1 - POD.x0, 0.12, POD.z1 - POD.z0 + 0.2], tilt: -0.28 },
+    { kind: "pipe", floor: "ground", position: [POD.x1 + 0.1, 0, POD.z1 + 0.1], height: H },
+    { kind: "wcSign", floor: "ground", position: [(POD.x0 + POD.x1) / 2, 1.9, POD.z1 + 0.05] },
+    { kind: "desk", floor: "ground", position: [(POD.x0 + POD.x1) / 2, 0, (POD.z0 + POD.z1) / 2], w: 0.9, d: 0.6 },
+    { kind: "officeChair", floor: "ground", position: [POD.x0 + 0.4, 0, POD.z0 + 0.35], rotation: 0 },
 
-    // ─── The stair nook (back left, under the deck) ─────────────
-    { kind: "wallPanel", floor: "ground", position: [(X0 + 0.55 + NOOK.x1) / 2, 0, Z0], w: NOOK.x1 - X0 - 0.55, h: UNDER },
-    { kind: "fuseBox", floor: "ground", position: [X0 + 0.3, 1.75, Z0] },
-    { kind: "wallWindow", floor: "ground", position: [STAIR.x + 0.1, 1.55, Z0] },
-    { kind: "spiralStair", floor: "ground", position: [STAIR.x, 0, STAIR.z], rise: MEZZ.level, radius: STAIR.radius, sweep: -Math.PI * 2, endAngle: -HALF_PI },
-    // The ribbed yellow duct beside the stair, with its checker plate and the extinguisher
-    { kind: "pipe", floor: "ground", position: [NOOK.x1 - 0.3, 0, Z0 + 0.22], height: H, r: 0.16, ribs: 0.32 },
-    { kind: "floorPlate", floor: "ground", position: [NOOK.x1 - 0.35, 0, Z0 + 0.45], w: 0.6, d: 0.7 },
-    { kind: "fireExtinguisher", floor: "ground", position: [NOOK.x1 - 0.05, 0, Z0 + 0.15] },
-    { kind: "coffeeStation", floor: "ground", position: [X0 + 0.6, 0, Z0 + 2.15] },
-    { kind: "trashBin", floor: "ground", position: [X0 + 1.35, 0, Z0 + 2.05] },
-
-    // ─── Under the deck, right: the yellow table + bench, felt panels, pictures, the "tio" sign ──
-    { kind: "highTable", floor: "ground", position: [1.6, 0, -4.2], w: 1.4, d: 0.7, h: 0.75, shelf: false, frame: "mustard" },
-    { kind: "highTable", floor: "ground", position: [1.6, 0, -3.5], w: 1.3, d: 0.36, h: 0.45, shelf: false, frame: "mustard" },
-    { kind: "highTable", floor: "ground", position: [0.9, 0, -2.2], w: 1.5, d: 0.6 },
-    ...[0.5, 1.3].map((x): Placement => ({ kind: "stool", floor: "ground", position: [x, 0, -1.65] })),
-    { kind: "frame", floor: "ground", position: [0.05, 1.5, Z0], w: 0.45, h: 0.55, art: ["terracotta", 2] },
-    { kind: "frame", floor: "ground", position: [0.65, 1.6, Z0], w: 0.4, h: 0.5, art: ["wallBlue", 1] },
-    ...[1.3, 1.78, 2.26].map((x): Placement => ({ kind: "wallPanel", floor: "ground", position: [x, 1.35, Z0], w: 0.44, h: 0.44, color: "white", shade: 1 })),
-    { kind: "logoSign", floor: "ground", position: [1.78, 2.1, Z0] },
-    { kind: "doorway", floor: "ground", position: [2.85, 0, Z0], w: 0.7 },
-    { kind: "pendantLamp", floor: "ground", position: [1.6, UNDER, -4.0], drop: 0.55, style: "cone" },
-
-    // The mirror on the right wall, with the rubber plant in front of it
-    { kind: "mirror", floor: "ground", position: [X1, 0, 0.1], rotation: -HALF_PI },
-    { kind: "rubberPlant", floor: "ground", position: [X1 - 0.55, 0, -0.3], seed: 81 },
-
-    // ─── Wall desk row (right wall) ─────────────────────────────
-    ...Array.from({ length: DESK_ROW.count }, (_, i): Placement => ({
-      kind: "desk",
-      floor: "ground",
-      position: [DESK_ROW.x, 0, deskZ(i)],
-      rotation: -HALF_PI,
-      w: DESK_ROW.w - 0.02,
-      divider: i === 0,
-    })),
-    ...Array.from({ length: DESK_ROW.count }, (_, i): Placement => ({
-      kind: "officeChair",
-      floor: "ground",
-      position: [DESK_ROW.x - 0.7, 0, deskZ(i) + (i % 2 ? 0.1 : -0.1)],
-      rotation: HALF_PI + (i % 2 ? 0.25 : -0.2),
-    })),
-    { kind: "laptop", floor: "ground", position: [DESK_ROW.x - 0.05, 0.75, deskZ(1)], rotation: -HALF_PI },
-    { kind: "laptop", floor: "ground", position: [DESK_ROW.x - 0.05, 0.75, deskZ(2) - 0.15], rotation: -HALF_PI },
-
-    // The wall shelf above the desks (reference/photo-wall-shelf.jpeg)
+    // Right wall: three tables in a row, with the plant shelf above (reference/photo-wall-shelf.jpeg)
+    ...[0, 1, 2].map((i): Placement => ({ kind: "desk", floor: "ground", position: [ENTRY_ROW.x, 0, entryDeskZ(i)], rotation: -HALF_PI, w: ENTRY_ROW.w - 0.02, divider: i === 0 })),
+    ...[0, 1, 2].map((i): Placement => ({ kind: "officeChair", floor: "ground", position: [ENTRY_ROW.x - 0.7, 0, entryDeskZ(i) + (i % 2 ? 0.1 : -0.1)], rotation: HALF_PI + (i % 2 ? 0.25 : -0.2) })),
+    { kind: "laptop", floor: "ground", position: [ENTRY_ROW.x - 0.05, 0.75, entryDeskZ(1)], rotation: -HALF_PI },
     { kind: "wallShelf", floor: "ground", position: [X1, SHELF.y, (SHELF.z0 + SHELF.z1) / 2], rotation: -HALF_PI, length: SHELF.z1 - SHELF.z0 },
-    { kind: "palm", floor: "ground", position: onShelf(1.2), upright: true, seed: 11, scale: 1.35, pot: "charcoal" },
-    { kind: "schefflera", floor: "ground", position: onShelf(1.9), seed: 17, scale: 0.55, pot: "terracotta" },
-    { kind: "smallTree", floor: "ground", position: onShelf(2.45), seed: 12, scale: 0.8, pot: "terracotta" },
-    { kind: "books", floor: "ground", position: [SHELF_X - 0.02, SHELF.y + 0.025, 3.05], rotation: -HALF_PI, count: 4, seed: 2 },
-    { kind: "shelfTrailer", floor: "ground", position: onShelf(3.5), seed: 14, length: 0.5, pot: "white" },
-    { kind: "shelfTrailer", floor: "ground", position: onShelf(4.0), seed: 15, length: 1.0, pot: "green" },
-    // The hoya hanging from a hook above the end of the shelf
-    { kind: "hangingPothos", floor: "ground", position: [X1 - 0.3, 3.2, 4.45], drop: 0.45, seed: 18, length: 1.7 },
+    { kind: "palm", floor: "ground", position: onShelf(Z_MID + 0.9), upright: true, seed: 11, scale: 1.35, pot: "charcoal" },
+    { kind: "schefflera", floor: "ground", position: onShelf(Z_MID + 1.6), seed: 17, scale: 0.55, pot: "terracotta" },
+    { kind: "smallTree", floor: "ground", position: onShelf(Z_MID + 2.15), seed: 12, scale: 0.8, pot: "terracotta" },
+    { kind: "books", floor: "ground", position: [SHELF_X - 0.02, SHELF.y + 0.025, Z_MID + 2.55], rotation: -HALF_PI, count: 4, seed: 2 },
+    { kind: "shelfTrailer", floor: "ground", position: onShelf(Z_MID + 3.05), seed: 14, length: 0.5, pot: "white" },
+    { kind: "shelfTrailer", floor: "ground", position: onShelf(Z_MID + 3.5), seed: 15, length: 1.0, pot: "green" },
+    { kind: "hangingPothos", floor: "ground", position: [X1 - 0.3, 3.4, Z1 - 0.45], drop: 0.45, seed: 18, length: 1.7 },
+    // The mirror on the right wall, with the rubber plant in front of it
+    { kind: "mirror", floor: "ground", position: [X1, 0, Z_MID + 0.25], rotation: -HALF_PI, w: 0.5 },
+    { kind: "rubberPlant", floor: "ground", position: [X1 - 0.45, 0, Z_MID + 0.2], seed: 81, scale: 0.9 },
 
-    // A schefflera in the corner at the end of the desk row
-    { kind: "schefflera", floor: "ground", position: [X1 - 0.35, 0, Z1 - 0.35], seed: 21, pot: "green" },
+    // The middle of the entrance: the big monstera and a schefflera
+    { kind: "monstera", floor: "ground", position: [0.2, 0, Z_MID + 2.4], seed: 41, pot: "white" },
+    { kind: "schefflera", floor: "ground", position: [0.9, 0, Z1 - 0.5], seed: 42, pot: "charcoal", scale: 1.05 },
+    { kind: "linearLamp", floor: "ground", position: [0.3, H, Z_MID + 2.1], rotation: HALF_PI, length: 2.8, drop: 1.0 },
 
-    // ─── Main floor ─────────────────────────────────────────────
-    // The long high table on the left wall, with the laptop and small tree
-    { kind: "highTable", floor: "ground", position: [X0 + 0.38, 0, 0.9], rotation: HALF_PI, w: 1.8, d: 0.68 },
-    ...[0.3, 0.9, 1.5].map((z): Placement => ({ kind: "stool", floor: "ground", position: [X0 + 1.0, 0, z] })),
-    { kind: "laptop", floor: "ground", position: [X0 + 0.42, 1.05, 0.5], rotation: HALF_PI },
-    { kind: "smallTree", floor: "ground", position: [X0 + 0.33, 1.05, 1.55], seed: 31 },
+    // ═══ MIDDLE (under the upper level) ═════════════════════════
+    // Left: two standing desks
+    ...[0.05, -0.85].map((z): Placement => ({ kind: "highTable", floor: "ground", position: [-1.3, 0, z], w: 1.2, d: 0.62, shelf: false })),
+    { kind: "laptop", floor: "ground", position: [-1.55, 1.05, 0.05] },
+    { kind: "smallTree", floor: "ground", position: [-0.85, 1.05, -0.85], seed: 31, scale: 0.8 },
+    // Right: three tables in a row
+    ...[0, 1, 2].map((i): Placement => ({ kind: "desk", floor: "ground", position: [MID_ROW.x, 0, midDeskZ(i)], rotation: -HALF_PI, w: MID_ROW.w - 0.02 })),
+    ...[0, 1, 2].map((i): Placement => ({ kind: "officeChair", floor: "ground", position: [MID_ROW.x - 0.7, 0, midDeskZ(i)], rotation: HALF_PI + (i % 2 ? 0.2 : -0.15) })),
+    { kind: "laptop", floor: "ground", position: [MID_ROW.x - 0.05, 0.75, midDeskZ(0)], rotation: -HALF_PI },
 
-    // The center high table
-    { kind: "highTable", floor: "ground", position: [-0.1, 0, -0.2], w: 1.8, d: 0.75 },
-    ...[-0.55, 0.35].flatMap((x): Placement[] => [
-      { kind: "stool", floor: "ground", position: [x, 0, -0.75] },
-      { kind: "stool", floor: "ground", position: [x, 0, 0.35] },
-    ]),
+    // ═══ LEFT, BETWEEN MIDDLE AND BACK: the stair + coffee corner ══
+    // Along the left wall from front to back: the coffee counter, the stair, then the duct
+    { kind: "fuseBox", floor: "ground", position: [X0, 1.75, Z_BACK + 0.35], rotation: HALF_PI, wall: [-1, 0] },
+    { kind: "coffeeStation", floor: "ground", position: [X0 + 0.35, 0, Z_BACK + 0.35], rotation: HALF_PI },
+    { kind: "wallPanel", floor: "ground", position: [X0, 0, STAIR.z - 0.35], rotation: HALF_PI, w: 2.1, h: UNDER, wall: [-1, 0] },
+    { kind: "wallWindow", floor: "ground", position: [X0, 1.55, STAIR.z], rotation: HALF_PI, wall: [-1, 0] },
+    { kind: "spiralStair", floor: "ground", position: [STAIR.x, 0, STAIR.z], rise: MEZZ.level, radius: STAIR.radius, sweep: -Math.PI * 1.5, endAngle: 0 },
+    { kind: "pipe", floor: "ground", position: [X0 + 0.25, 0, STAIR.z - 1.05], height: H, r: 0.16, ribs: 0.32 },
+    { kind: "floorPlate", floor: "ground", position: [X0 + 0.4, 0, STAIR.z - 1.05], w: 0.6, d: 0.6 },
+    { kind: "fireExtinguisher", floor: "ground", position: [X0 + 0.15, 0, STAIR.z - 1.45] },
+    { kind: "trashBin", floor: "ground", position: [X0 + 0.3, 0, Z_BACK + 1.1] },
 
-    // The big monstera on its moss pole, and a second schefflera
-    { kind: "monstera", floor: "ground", position: [-0.35, 0, 3.0], seed: 41, pot: "white" },
-    { kind: "schefflera", floor: "ground", position: [1.3, 0, 0.9], seed: 42, pot: "charcoal", scale: 1.05 },
+    // ═══ BACK (the meeting room) ════════════════════════════════
+    { kind: "diningTable", floor: "ground", position: [0.9, 0, -3.3], w: 2.4, d: 1.0 },
+    ...[0.3, 1.5].map((x): Placement => ({ kind: "bench", floor: "ground", position: [x, 0, -2.5], w: 1.1 })),
+    ...[-0.0, 0.6, 1.2, 1.8].map((x): Placement => ({ kind: "diningChair", floor: "ground", position: [x, 0, -4.05] })),
+    ...[0.4, 1.4].map((x): Placement => ({ kind: "pendantLamp", floor: "ground", position: [x, UNDER, -3.3], drop: 0.7, style: "dome" })),
+    { kind: "frame", floor: "ground", position: [0.3, 1.5, Z0], w: 0.45, h: 0.55, art: ["terracotta", 2] },
+    { kind: "frame", floor: "ground", position: [0.9, 1.6, Z0], w: 0.4, h: 0.5, art: ["wallBlue", 1] },
+    { kind: "frame", floor: "ground", position: [1.5, 1.45, Z0], w: 0.42, h: 0.34, art: ["mustard", 3] },
+    { kind: "logoSign", floor: "ground", position: [2.5, 1.8, Z0] },
+    // The yellow table and bench (reference/photo-mirror.jpeg) along the right wall
+    { kind: "highTable", floor: "ground", position: [X1 - 0.4, 0, -4.5], rotation: -HALF_PI, w: 1.3, d: 0.7, h: 0.75, shelf: false, frame: "mustard" },
+    { kind: "highTable", floor: "ground", position: [X1 - 1.05, 0, -4.5], rotation: -HALF_PI, w: 1.2, d: 0.36, h: 0.45, shelf: false, frame: "mustard" },
+    ...[-0.5, -1.0].map((x): Placement => ({ kind: "wallPanel", floor: "ground", position: [x, 1.3, Z0], w: 0.44, h: 0.44, color: "white", shade: 1, wall: [0, -1] })),
 
-    // The merch wall on the left wall by the entrance (reference/photo-merch-wall.jpeg)
-    { kind: "merchWall", floor: "ground", position: [X0, 0, 4.35], rotation: HALF_PI },
-    { kind: "posterBoard", floor: "ground", position: [X0, 1.6, 4.72], rotation: HALF_PI },
-    { kind: "hangingPothos", floor: "ground", position: [X0 + 0.45, 3.0, 4.55], drop: 0.5, seed: 19, length: 0.9, color: "purple", pot: "charcoal" },
-    { kind: "climber", floor: "ground", position: [X0 + 0.7, 0, 4.7], seed: 20, height: 1.9 },
-    { kind: "branchPlant", floor: "ground", position: [X0 + 0.3, 0, 4.75], seed: 22 },
+    // ═══ UPPER LEVEL ════════════════════════════════════════════
+    { kind: "railing", floor: "mezzanine", from: X0, to: X1, z: MEZZ.front - 0.04, y: UP },
+    // A guard along the stair opening's front edge
+    { kind: "railing", floor: "mezzanine", from: X0, to: HOLE.x1, z: HOLE.z1, y: UP, height: 0.95 },
 
-    // The window desks just inside the shopfront, looking out at the street
-    ...[-1.3, -0.05].map((x): Placement => ({ kind: "desk", floor: "ground", position: [x, 0, Z1 - 0.4], rotation: Math.PI, w: 1.24 })),
-    ...[-1.35, 0.0].map((x, i): Placement => ({ kind: "officeChair", floor: "ground", position: [x, 0, Z1 - 1.1], rotation: i ? 0.15 : -0.2 })),
+    // Front zone: desks at the railing, looking over the entrance, with the "hello" / "world!" globes
+    ...RAIL_DESKS.map((x): Placement => ({ kind: "desk", floor: "mezzanine", position: [x, UP, MEZZ.front - 0.45], rotation: Math.PI, w: 1.22 })),
+    ...RAIL_DESKS.map((x, i): Placement => ({ kind: "officeChair", floor: "mezzanine", position: [x + (i ? 0.1 : -0.1), UP, MEZZ.front - 1.15], rotation: i ? 0.2 : -0.15 })),
+    ...RAIL_DESKS.map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, MEZZ.front + 0.5], drop: 1.55, style: "globe", label: true })),
+    // Desks along the left wall
+    ...[-0.7, -1.9].map((dz): Placement => ({ kind: "desk", floor: "mezzanine", position: [X0 + 0.38, UP, MEZZ.front + dz], rotation: HALF_PI, w: 1.15 })),
+    ...[-0.7, -1.9].map((dz): Placement => ({ kind: "officeChair", floor: "mezzanine", position: [X0 + 1.1, UP, MEZZ.front + dz], rotation: -HALF_PI })),
+    { kind: "palm", floor: "mezzanine", position: [X0 + 0.3, UP + 0.75, MEZZ.front - 0.1], seed: 65, upright: true, scale: 0.6, pot: "white" },
+    // A cane armchair on a jute rug, and plants
+    { kind: "rug", floor: "mezzanine", position: [2.3, UP, MEZZ.front - 1.5], w: 1.4, d: 1.1 },
+    { kind: "armChair", floor: "mezzanine", position: [2.3, UP, MEZZ.front - 1.5], rotation: HALF_PI },
+    { kind: "palm", floor: "mezzanine", position: [X1 - 0.3, UP, MEZZ.front - 0.3], seed: 62, scale: 1.1 },
+    { kind: "hangingPothos", floor: "mezzanine", position: [-1.7, UP + 1.0, MEZZ.front + 0.14], drop: 0.8, seed: 72, length: 1.0 },
+    { kind: "hangingPothos", floor: "mezzanine", position: [2.2, UP + 1.0, MEZZ.front + 0.14], drop: 0.6, seed: 73, length: 1.4 },
 
-    // ─── Mezzanine: desks at the railing (reference/photo-mezzanine-desks.jpeg) ──
-    ...MEZZ_DESKS.map((x): Placement => ({ kind: "desk", floor: "mezzanine", position: [x, UP, MEZZ.front - 0.45], rotation: Math.PI, w: 1.22 })),
-    ...MEZZ_DESKS.map((x, i): Placement => ({ kind: "officeChair", floor: "mezzanine", position: [x + (i % 2 ? 0.1 : -0.1), UP, MEZZ.front - 1.15], rotation: i % 2 ? 0.2 : -0.15 })),
-    { kind: "laptop", floor: "mezzanine", position: [MEZZ_DESKS[1], UP + 0.75, MEZZ.front - 0.5], rotation: Math.PI },
-    { kind: "palm", floor: "mezzanine", position: [MID + 0.3, UP, MEZZ.front - 0.3], seed: 62, scale: 1.1 },
-    // More desks against the back wall, and a cane armchair on a jute rug
-    ...[1.0, 2.35].map((x): Placement => ({ kind: "desk", floor: "mezzanine", position: [x, UP, Z0 + 0.38], w: 1.3 })),
-    ...[1.0, 2.35].map((x, i): Placement => ({ kind: "officeChair", floor: "mezzanine", position: [x + (i ? 0.1 : -0.1), UP, Z0 + 1.1], rotation: Math.PI + (i ? 0.2 : -0.2) })),
-    { kind: "palm", floor: "mezzanine", position: [1.45, UP + 0.75, Z0 + 0.25], seed: 65, upright: true, scale: 0.6, pot: "white" },
-    { kind: "rug", floor: "mezzanine", position: [0.85, UP, -2.95], w: 1.3, d: 1.0 },
-    { kind: "armChair", floor: "mezzanine", position: [0.75, UP, -2.95], rotation: HALF_PI },
-    { kind: "palm", floor: "mezzanine", position: [X1 - 0.3, UP, MEZZ.front - 0.3], seed: 64, upright: true, scale: 1.0, pot: "white" },
-    // The "hello" / "world!" globes, hung out over the double-height room
-    ...MEZZ_DESKS.map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, MEZZ.front + 0.5], drop: 1.55, style: "globe", label: true })),
-    // Pothos baskets hung off the railing, trailing over the deck edge
-    { kind: "hangingPothos", floor: "mezzanine", position: [MID + 0.35, UP + 1.0, MEZZ.front + 0.14], drop: 0.8, seed: 72, length: 1.0 },
-    { kind: "hangingPothos", floor: "mezzanine", position: [2.9, UP + 1.0, MEZZ.front + 0.14], drop: 0.6, seed: 73, length: 1.4 },
+    // The navy curtain between the desks and the kitchen, drawn half open
+    { kind: "curtain", floor: "mezzanine", position: [HOLE.x1, UP, UP_CURTAIN_Z], width: 1.5, height: H - UP - 0.1, pleat: 0.22 },
 
-    // ─── Upstairs, left half: the kitchen the stair comes up into ──
-    // A white wall toward the main room, with the counter run against it
-    { kind: "partition", floor: "mezzanine", from: [KITCHEN.x0, KITCHEN.zFront], to: [KITCHEN.x1, KITCHEN.zFront], y: UP, height: H - UP, cutaway: [0, 1] },
-    { kind: "kitchenRun", floor: "mezzanine", position: [-1.8, UP, KITCHEN.zFront - 0.05], rotation: Math.PI, w: 1.7, fridge: true },
-    { kind: "shelvingUnit", floor: "mezzanine", position: [-0.55, UP, KITCHEN.zFront - 0.25], rotation: Math.PI, w: 0.7, d: 0.35, h: 1.6, wood: true },
-    { kind: "kitchenIsland", floor: "mezzanine", position: [-2.55, UP, -2.5], rotation: HALF_PI, w: 1.0, d: 0.55 },
-    { kind: "metalStool", floor: "mezzanine", position: [-2.0, UP, -2.2] },
-    { kind: "metalStool", floor: "mezzanine", position: [-2.0, UP, -2.85] },
-    ...[-2.75, -2.25].map((z): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [-2.55, H, z], drop: 1.3, style: "dome" })),
-    { kind: "frame", floor: "mezzanine", position: [X0, UP + 1.5, -2.5], rotation: HALF_PI, w: 0.75, h: 0.55, art: ["orange", 3] },
-    { kind: "kilim", floor: "mezzanine", position: [-1.3, UP, -3.1], w: 1.3, d: 0.5 },
-    // The toilet behind its yellow door
-    { kind: "partition", floor: "mezzanine", from: [WC.x0, WC.zFront], to: [WC.x1, WC.zFront], y: UP, door: { at: 0.5, w: 0.7, color: "mustard" } },
-    { kind: "partition", floor: "mezzanine", from: [WC.x0, Z0], to: [WC.x0, WC.zFront], y: UP },
-    { kind: "partition", floor: "mezzanine", from: [WC.x1, Z0], to: [WC.x1, WC.zFront], y: UP },
+    // Back zone: the kitchen (reference/photo-kitchen-upstairs*.{jpeg,png})
+    { kind: "kitchenRun", floor: "mezzanine", position: [0.9, UP, Z0], w: 2.4, fridge: true },
+    { kind: "kitchenIsland", floor: "mezzanine", position: [0.9, UP, -3.7], w: 1.3, d: 0.7 },
+    { kind: "metalStool", floor: "mezzanine", position: [0.1, UP, -3.6] },
+    { kind: "metalStool", floor: "mezzanine", position: [1.7, UP, -3.8] },
+    ...[0.6, 1.2].map((x): Placement => ({ kind: "pendantLamp", floor: "mezzanine", position: [x, H, -3.7], drop: 1.3, style: "dome" })),
+    { kind: "shelvingUnit", floor: "mezzanine", position: [X1 - 0.22, UP, UP_CURTAIN_Z - 0.6], rotation: -HALF_PI, w: 0.8, d: 0.35, h: 1.6, wood: true },
+    { kind: "kilim", floor: "mezzanine", position: [0.9, UP, -2.75], w: 1.8, d: 0.6 },
+    // The toilet behind its yellow door, in the back-left corner behind the stair
+    { kind: "partition", floor: "mezzanine", from: [WC.x0, WC.zFront], to: [WC.x1, WC.zFront], y: UP },
+    { kind: "partition", floor: "mezzanine", from: [WC.x1, Z0], to: [WC.x1, WC.zFront], y: UP, door: { at: 0.6, w: 0.7, color: "mustard" } },
     { kind: "toilet", floor: "mezzanine", position: [(WC.x0 + WC.x1) / 2, UP, Z0 + 0.02] },
-    // The navy curtain between the kitchen and the desks, drawn half open
-    { kind: "curtain", floor: "mezzanine", position: [MID, UP, KITCHEN.zFront - 0.1], rotation: HALF_PI, width: 1.2, height: H - UP - 0.1, pleat: 0.22 },
+    { kind: "frame", floor: "mezzanine", position: [WC.x1 + 0.05, UP + 1.5, -4.2], rotation: HALF_PI, w: 0.7, h: 0.5, art: ["orange", 3] },
   ] satisfies Placement[] as Placement[],
 };
 
