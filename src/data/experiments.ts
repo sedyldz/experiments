@@ -35,5 +35,14 @@ export const experiments: Experiment[] = [
     path: "/experiments/hand-push",
     githubUrl: "https://github.com/yourusername/hand-push",
   },
+  {
+    id: "magic-hands",
+    title: "Magic Hands",
+    description:
+      "Hand tracking meets shader magic: conjure a swirling orb of water that refracts the camera image, flames from your fingertips, or an orbiting ring of arcane sparks.",
+    thumbnail: "/thumbnails/magic-hands.jpg",
+    path: "/experiments/magic-hands",
+    githubUrl: "https://github.com/yourusername/magic-hands",
+  },
   // Add more experiments here as you create them
 ];
