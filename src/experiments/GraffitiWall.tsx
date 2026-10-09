@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  FaceDetector,
   FilesetResolver,
   HandLandmarker,
   type HandLandmarkerResult,
@@ -8,6 +9,18 @@ import {
 import { OneEuroFilter } from "../lib/oneEuroFilter";
 
 const MAX_HANDS = 4;
+
+// A new hand has to be tracked for this many consecutive camera frames
+// before it can paint or show a cursor. Real hands pass in a fraction of a
+// second; the model's brief false positives (a face, a patterned shirt)
+// mostly don't.
+const CONFIRM_FRAMES = 8;
+// The face detector runs every Nth camera frame; faces move slowly enough
+// that reusing the boxes in between is fine.
+const FACE_EVERY_N_FRAMES = 2;
+// Face boxes are grown by this fraction on each side before rejecting
+// hands inside them (the detector's box is tight around the features).
+const FACE_BOX_MARGIN = 0.25;
 
 const PALETTE = [
   "#ff2d95", // pink
@@ -114,6 +127,9 @@ interface Pen {
   // picked a color, or the pinch started on the palette).
   locked: boolean;
   flipFrames: number;
+  // Consecutive camera frames this pen has been seen; it only counts as a
+  // real hand once this reaches CONFIRM_FRAMES.
+  seenFrames: number;
   closeness: number;
   handSize: number;
   color: number;
@@ -135,7 +151,8 @@ interface Drip {
 
 // What the camera saw last frame, for the camera view.
 interface CameraDebug {
-  hands: { landmarks: NormalizedLandmark[]; pinched: boolean }[];
+  hands: { landmarks: NormalizedLandmark[]; pinched: boolean; rejected: string | null }[];
+  faces: { x: number; y: number; w: number; h: number }[];
   colorMask: Point[];
   colorTip: Point | null;
 }
@@ -242,6 +259,32 @@ function dist3(
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
+// Sanity-checks a detected hand's 3D skeleton (world landmarks): finger
+// lengths and palm width have to be in human-hand proportions relative to
+// the palm length. When the model hallucinates a hand on something else,
+// the skeleton it fits is usually distorted enough to fail this.
+function isPlausibleHand(world: { x: number; y: number; z: number }[]): boolean {
+  const palmLen = dist3(world[0], world[9]);
+  if (palmLen < 1e-4) return false;
+  const palmWidth = dist3(world[5], world[17]) / palmLen;
+  if (palmWidth < 0.35 || palmWidth > 1.3) return false;
+  const fingers = [
+    [5, 6, 7, 8],
+    [9, 10, 11, 12],
+    [13, 14, 15, 16],
+    [17, 18, 19, 20],
+  ];
+  for (const f of fingers) {
+    const len =
+      (dist3(world[f[0]], world[f[1]]) +
+        dist3(world[f[1]], world[f[2]]) +
+        dist3(world[f[2]], world[f[3]])) /
+      palmLen;
+    if (len < 0.35 || len > 1.6) return false;
+  }
+  return true;
+}
+
 // Groups the set pixels of a w*h mask into 4-connected blobs.
 function connectedComponents(mask: Uint8Array, w: number, h: number): number[][] {
   const seen = new Uint8Array(mask.length);
@@ -343,19 +386,28 @@ const GraffitiWall = () => {
   const dripsRef = useRef<Drip[]>([]);
   const penCountRef = useRef(0);
   const lastHandSeenRef = useRef(0);
-  const cameraDebugRef = useRef<CameraDebug>({ hands: [], colorMask: [], colorTip: null });
+  const cameraDebugRef = useRef<CameraDebug>({
+    hands: [],
+    faces: [],
+    colorMask: [],
+    colorTip: null,
+  });
   const flashPhaseRef = useRef<FlashPhase>(null);
   const currentColorRef = useRef(0);
   const lastColorTipRef = useRef<Point | null>(null);
   const lastVideoTimeRef = useRef(-1);
   const lastFrameTimeRef = useRef<number | null>(null);
   const handsOutsideRef = useRef(0);
+  const faceDetectorRef = useRef<FaceDetector | null>(null);
+  const frameCountRef = useRef(0);
 
   const [mode, setMode] = useState<TrackingMode>("hand");
   const [corners, setCorners] = useState<Point[]>(loadCorners);
   const [brushSize, setBrushSize] = useState(50);
   const [pinchSensitivity, setPinchSensitivity] = useState(50);
   const [steadiness, setSteadiness] = useState(40);
+  const [maxHands, setMaxHands] = useState(2);
+  const [ignoreFaces, setIgnoreFaces] = useState(true);
   const [dripsOn, setDripsOn] = useState(true);
   const [showPalette, setShowPalette] = useState(true);
   const [showGuide, setShowGuide] = useState(true);
@@ -368,6 +420,8 @@ const GraffitiWall = () => {
   const brushSizeRef = useRef(brushSize);
   const pinchSensitivityRef = useRef(pinchSensitivity);
   const steadinessRef = useRef(steadiness);
+  const ignoreFacesRef = useRef(ignoreFaces);
+  const maxHandsRef = useRef(maxHands);
   const dripsOnRef = useRef(dripsOn);
   const showPaletteRef = useRef(showPalette);
   const showGuideRef = useRef(showGuide);
@@ -398,6 +452,14 @@ const GraffitiWall = () => {
   useEffect(() => {
     steadinessRef.current = steadiness;
   }, [steadiness]);
+  useEffect(() => {
+    maxHandsRef.current = maxHands;
+    void landmarkerRef.current?.setOptions({ numHands: maxHands });
+  }, [maxHands]);
+  useEffect(() => {
+    ignoreFacesRef.current = ignoreFaces;
+    if (!ignoreFaces) cameraDebugRef.current.faces = [];
+  }, [ignoreFaces]);
   useEffect(() => {
     dripsOnRef.current = dripsOn;
   }, [dripsOn]);
@@ -665,7 +727,32 @@ const GraffitiWall = () => {
     }
 
     const debug = cameraDebugRef.current;
+    ctx.font = "600 11px Inter, system-ui, sans-serif";
+    for (const f of debug.faces) {
+      ctx.strokeStyle = "#00e5ff";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(f.x * w, f.y * h, f.w * w, f.h * h);
+      ctx.fillStyle = "#00e5ff";
+      ctx.fillText("face — ignored", f.x * w + 3, f.y * h + 12);
+    }
     for (const hand of debug.hands) {
+      if (hand.rejected) {
+        ctx.strokeStyle = "rgba(255,60,60,0.9)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (const [a, b] of HAND_CONNECTIONS) {
+          ctx.moveTo(hand.landmarks[a].x * w, hand.landmarks[a].y * h);
+          ctx.lineTo(hand.landmarks[b].x * w, hand.landmarks[b].y * h);
+        }
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255,60,60,0.95)";
+        ctx.fillText(
+          hand.rejected === "face" ? "not a hand (face)" : "not a hand (shape)",
+          hand.landmarks[0].x * w + 4,
+          hand.landmarks[0].y * h + 14
+        );
+        continue;
+      }
       ctx.strokeStyle = "rgba(255,255,255,0.8)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -775,8 +862,55 @@ const GraffitiWall = () => {
           if (landmarker) {
             const result: HandLandmarkerResult = landmarker.detectForVideo(video, time);
             const aspect = video.videoWidth / video.videoHeight;
+
+            // Faces are the model's most common false "hand". Find them
+            // with a dedicated face detector and drop any hand on one.
+            const faceDetector = faceDetectorRef.current;
+            if (ignoreFacesRef.current && faceDetector) {
+              if (frameCountRef.current % FACE_EVERY_N_FRAMES === 0) {
+                const faces = faceDetector.detectForVideo(video, time).detections;
+                debug.faces = faces.flatMap((f) => {
+                  const b = f.boundingBox;
+                  if (!b) return [];
+                  const mx = b.width * FACE_BOX_MARGIN;
+                  const my = b.height * FACE_BOX_MARGIN;
+                  return [
+                    {
+                      x: (b.originX - mx) / video.videoWidth,
+                      y: (b.originY - my) / video.videoHeight,
+                      w: (b.width + mx * 2) / video.videoWidth,
+                      h: (b.height + my * 2) / video.videoHeight,
+                    },
+                  ];
+                });
+              }
+            } else {
+              debug.faces = [];
+            }
+            frameCountRef.current++;
+
             result.landmarks.forEach((lm, h) => {
               const world = result.worldLandmarks[h];
+              const palmCenter = [0, 5, 9, 13, 17].reduce(
+                (acc, i) => ({ x: acc.x + lm[i].x / 5, y: acc.y + lm[i].y / 5 }),
+                { x: 0, y: 0 }
+              );
+              const onFace = debug.faces.some(
+                (f) =>
+                  palmCenter.x > f.x &&
+                  palmCenter.x < f.x + f.w &&
+                  palmCenter.y > f.y &&
+                  palmCenter.y < f.y + f.h
+              );
+              const rejected = onFace
+                ? "face"
+                : world && world.length === 21 && !isPlausibleHand(world)
+                ? "shape"
+                : null;
+              if (rejected) {
+                debug.hands.push({ landmarks: lm, pinched: false, rejected });
+                return;
+              }
               let ratio: number;
               if (world && world.length === 21) {
                 const palm = (dist3(world[0], world[5]) + dist3(world[0], world[17])) / 2 || 1;
@@ -786,7 +920,7 @@ const GraffitiWall = () => {
                 ratio = Math.hypot((lm[4].x - lm[8].x) * aspect, lm[4].y - lm[8].y) / palm;
               }
               const handSize = Math.hypot((lm[0].x - lm[9].x) * aspect, lm[0].y - lm[9].y);
-              debug.hands.push({ landmarks: lm, pinched: ratio < pinchDown });
+              debug.hands.push({ landmarks: lm, pinched: ratio < pinchDown, rejected: null });
               // The paint comes from the index fingertip. The thumb/index
               // midpoint used before slid sideways every time the fingers
               // closed, so lines started (and wandered) off target.
@@ -838,6 +972,7 @@ const GraffitiWall = () => {
             down: false,
             locked: false,
             flipFrames: 0,
+            seenFrames: 0,
             closeness: 0,
             handSize: det.handSize,
             // New pens (including a hand that tracking briefly lost) use the
@@ -860,6 +995,7 @@ const GraffitiWall = () => {
           const gap = time - pen.lastSeen;
           pen.lastSeen = time;
           pen.handSize = det.handSize;
+          pen.seenFrames = gap > STROKE_GAP_MS ? 1 : pen.seenFrames + 1;
           pen.rawX = det.x;
           pen.rawY = det.y;
           const x = pen.filterX.filter(det.x, tSec);
@@ -869,6 +1005,7 @@ const GraffitiWall = () => {
           pen.x = x;
           pen.y = y;
           const inPalette = y > paletteTop;
+          if (pen.seenFrames < CONFIRM_FRAMES && det.pinchRatio !== null) return;
 
           const wasDown = pen.down;
           const wantDown =
@@ -979,7 +1116,11 @@ const GraffitiWall = () => {
       }
       handsOutside = handsOutsideRef.current;
 
-      const visiblePens = pensRef.current.filter((p) => time - p.lastSeen < PEN_VISIBLE_MS);
+      const visiblePens = pensRef.current.filter(
+        (p) =>
+          time - p.lastSeen < PEN_VISIBLE_MS &&
+          (p.seenFrames >= CONFIRM_FRAMES || !handMode)
+      );
       if (visiblePens.length !== penCountRef.current) {
         penCountRef.current = visiblePens.length;
         setPenCount(visiblePens.length);
@@ -1187,9 +1328,11 @@ const GraffitiWall = () => {
           "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
       },
       runningMode: "VIDEO" as const,
-      numHands: MAX_HANDS,
-      minHandDetectionConfidence: 0.6,
-      minHandPresenceConfidence: 0.6,
+      numHands: maxHandsRef.current,
+      // Stricter than MediaPipe's 0.5 defaults: fewer false hands, at the
+      // cost of needing a clearly visible hand.
+      minHandDetectionConfidence: 0.75,
+      minHandPresenceConfidence: 0.75,
       minTrackingConfidence: 0.6,
     };
     let landmarker: HandLandmarker;
@@ -1205,6 +1348,21 @@ const GraffitiWall = () => {
       });
     }
     landmarkerRef.current = landmarker;
+
+    // The face filter is a nice-to-have: if its model can't load, hand
+    // tracking still works without it.
+    try {
+      faceDetectorRef.current = await FaceDetector.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+        },
+        runningMode: "VIDEO",
+        minDetectionConfidence: 0.5,
+      });
+    } catch {
+      faceDetectorRef.current = null;
+    }
     return landmarker;
   }, []);
 
@@ -1464,6 +1622,8 @@ const GraffitiWall = () => {
       stopCamera();
       landmarkerRef.current?.close();
       landmarkerRef.current = null;
+      faceDetectorRef.current?.close();
+      faceDetectorRef.current = null;
     };
   }, [stopCamera]);
 
@@ -1686,21 +1846,49 @@ const GraffitiWall = () => {
           </fieldset>
 
           {mode === "hand" ? (
-            <label className="block">
-              Pinch sensitivity
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={pinchSensitivity}
-                onChange={(e) => setPinchSensitivity(Number(e.target.value))}
-                className="w-full"
-              />
-              <span className="text-xs text-white/50">
-                Higher = sprays with the fingers further apart (try this if
-                holding a thick pen doesn't trigger).
-              </span>
-            </label>
+            <div className="space-y-2">
+              <label className="block">
+                Pinch sensitivity
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={pinchSensitivity}
+                  onChange={(e) => setPinchSensitivity(Number(e.target.value))}
+                  className="w-full"
+                />
+                <span className="text-xs text-white/50">
+                  Higher = sprays with the fingers further apart (try this if
+                  holding a thick pen doesn't trigger).
+                </span>
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                Hands at once
+                <select
+                  value={maxHands}
+                  onChange={(e) => setMaxHands(Number(e.target.value))}
+                  className="rounded bg-white/10 px-2 py-1"
+                >
+                  {Array.from({ length: MAX_HANDS }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n} className="bg-black">
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={ignoreFaces}
+                  onChange={(e) => setIgnoreFaces(e.target.checked)}
+                />
+                Ignore faces (stops faces counting as hands)
+              </label>
+              <p className="text-xs text-white/50">
+                In the camera view, faces get a blue box and anything rejected
+                as "not a hand" is drawn red.
+              </p>
+            </div>
           ) : (
             <div className="space-y-2 rounded-md bg-white/5 p-2">
               <div className="flex items-center gap-2">
