@@ -35,5 +35,14 @@ export const experiments: Experiment[] = [
     path: "/experiments/hand-push",
     githubUrl: "https://github.com/yourusername/hand-push",
   },
+  {
+    id: "graffiti-wall",
+    title: "Graffiti Wall",
+    description:
+      "Live projection-mapped spray paint: grab a pen, hold it to the wall, and the camera turns it into a spray can — with drips, a projected color palette, and multiple painters at once.",
+    thumbnail: "/thumbnails/graffiti-wall.jpg",
+    path: "/experiments/graffiti-wall",
+    githubUrl: "https://github.com/yourusername/graffiti-wall",
+  },
   // Add more experiments here as you create them
 ];

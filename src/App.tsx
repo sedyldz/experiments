@@ -4,6 +4,7 @@ import ExperimentDetail from "./pages/ExperimentDetail";
 import CalendarStories from "./experiments/CalendarStories";
 import CameraPortal from "./experiments/CameraPortal";
 import HandPush from "./experiments/HandPush";
+import GraffitiWall from "./experiments/GraffitiWall";
 
 function App() {
   return (
@@ -22,6 +23,10 @@ function App() {
               element={<CameraPortal />}
             />
             <Route path="/experiments/hand-push" element={<HandPush />} />
+            <Route
+              path="/experiments/graffiti-wall"
+              element={<GraffitiWall />}
+            />
           </Routes>
         </main>
       </div>
