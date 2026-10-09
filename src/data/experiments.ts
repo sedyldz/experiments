@@ -35,5 +35,14 @@ export const experiments: Experiment[] = [
     path: "/experiments/hand-push",
     githubUrl: "https://github.com/yourusername/hand-push",
   },
+  {
+    id: "butterflies",
+    title: "Butterflies",
+    description:
+      "A projection-mapping sketch: 3D butterflies rest on the projected surface, scatter when a tracked hand reaches into their spot, and fly back to land where they were. Place them by painting onto the projection, and calibrate the camera to the surface.",
+    thumbnail: "/thumbnails/butterflies.jpg",
+    path: "/experiments/butterflies",
+    githubUrl: "https://github.com/yourusername/butterflies",
+  },
   // Add more experiments here as you create them
 ];
