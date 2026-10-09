@@ -40,14 +40,19 @@ const UP_FRAMES = 4;
 const PEN_MATCH_FACTOR = 0.25;
 // A pen not seen for this long is forgotten.
 const PEN_FORGET_MS = 800;
+// A pen's cursor stays on the wall this long after its last camera frame
+// (the display refreshes faster than the camera delivers frames).
+const PEN_VISIBLE_MS = 150;
 // A pen that reappears within this gap keeps its stroke going; after a
 // longer dropout the stroke restarts rather than jumping across the wall.
 const STROKE_GAP_MS = 160;
 
-// How long an open (not drawing) hand has to rest on a swatch to pick it,
-// and on the ✕ to wipe the wall.
-const PICK_HOLD_S = 0.8;
-const CLEAR_HOLD_S = 1.6;
+// Hand mode: how long to keep pinching on a swatch to pick it, and on the
+// ✕ to wipe the wall. Color mode has no pinch, so the pen has to rest on a
+// swatch a bit longer (PICK_DWELL_S) to pick it.
+const PICK_HOLD_S = 0.35;
+const PICK_DWELL_S = 1;
+const CLEAR_HOLD_S = 1.5;
 
 // Spray dabs are stamped every DAB_SPACING * radius along the stroke.
 const DAB_SPACING = 0.28;
@@ -95,17 +100,24 @@ interface Detection {
 }
 
 interface Pen {
+  // Smoothed position (the cursor) and the raw detection it came from.
   x: number;
   y: number;
+  rawX: number;
+  rawY: number;
+  // Where the paint actually is: trails the cursor on a short leash.
+  brush: Point | null;
   filterX: OneEuroFilter;
   filterY: OneEuroFilter;
   down: boolean;
+  // Pinched, but not allowed to paint until the hand opens again (just
+  // picked a color, or the pinch started on the palette).
+  locked: boolean;
   flipFrames: number;
   closeness: number;
   handSize: number;
   color: number;
   lastSeen: number;
-  prev: Point | null;
   speed: number;
   wetness: number;
   hoverSlot: number | null;
@@ -335,11 +347,15 @@ const GraffitiWall = () => {
   const flashPhaseRef = useRef<FlashPhase>(null);
   const currentColorRef = useRef(0);
   const lastColorTipRef = useRef<Point | null>(null);
+  const lastVideoTimeRef = useRef(-1);
+  const lastFrameTimeRef = useRef<number | null>(null);
+  const handsOutsideRef = useRef(0);
 
   const [mode, setMode] = useState<TrackingMode>("hand");
   const [corners, setCorners] = useState<Point[]>(loadCorners);
   const [brushSize, setBrushSize] = useState(50);
   const [pinchSensitivity, setPinchSensitivity] = useState(50);
+  const [steadiness, setSteadiness] = useState(40);
   const [dripsOn, setDripsOn] = useState(true);
   const [showPalette, setShowPalette] = useState(true);
   const [showGuide, setShowGuide] = useState(true);
@@ -351,6 +367,7 @@ const GraffitiWall = () => {
   const homographyRef = useRef<number[] | null>(null);
   const brushSizeRef = useRef(brushSize);
   const pinchSensitivityRef = useRef(pinchSensitivity);
+  const steadinessRef = useRef(steadiness);
   const dripsOnRef = useRef(dripsOn);
   const showPaletteRef = useRef(showPalette);
   const showGuideRef = useRef(showGuide);
@@ -378,6 +395,9 @@ const GraffitiWall = () => {
   useEffect(() => {
     pinchSensitivityRef.current = pinchSensitivity;
   }, [pinchSensitivity]);
+  useEffect(() => {
+    steadinessRef.current = steadiness;
+  }, [steadiness]);
   useEffect(() => {
     dripsOnRef.current = dripsOn;
   }, [dripsOn]);
@@ -704,202 +724,262 @@ const GraffitiWall = () => {
       }
 
       const H = homographyRef.current;
-      const tSec = time / 1000;
       const minSide = Math.min(width, height);
       const calibrating = previewModeRef.current !== null;
+      const handMode = modeRef.current === "hand";
       const pinchDown = 0.25 + (pinchSensitivityRef.current / 100) * 0.35;
       const pinchUp = pinchDown + PINCH_HYSTERESIS;
-
-      // 1. Find pen tips in camera space and map them onto the wall.
-      let handsOutside = 0;
-      const toScreen = (p: Point): Point | null => {
-        if (!H) return null;
-        const q = applyHomography(H, p);
-        if (!q) return null;
-        // Slightly outside the projection still counts, so strokes can
-        // reach the very edge; far outside is someone walking past.
-        if (q.x < -0.05 || q.x > 1.05 || q.y < -0.05 || q.y > 1.05) return null;
-        return { x: q.x * width, y: q.y * height };
-      };
-
-      const detections: Detection[] = [];
-      const debug = cameraDebugRef.current;
-      debug.hands = [];
-      if (modeRef.current === "hand") {
-        debug.colorMask = [];
-        debug.colorTip = null;
-        const landmarker = landmarkerRef.current;
-        if (landmarker) {
-          const result: HandLandmarkerResult = landmarker.detectForVideo(video, time);
-          const aspect = video.videoWidth / video.videoHeight;
-          result.landmarks.forEach((lm, h) => {
-            const world = result.worldLandmarks[h];
-            const thumb = lm[4];
-            const index = lm[8];
-            let ratio: number;
-            if (world && world.length === 21) {
-              const palm = (dist3(world[0], world[5]) + dist3(world[0], world[17])) / 2 || 1;
-              ratio = dist3(world[4], world[8]) / palm;
-            } else {
-              const palm = Math.hypot((lm[0].x - lm[9].x) * aspect, lm[0].y - lm[9].y) || 1;
-              ratio = Math.hypot((thumb.x - index.x) * aspect, thumb.y - index.y) / palm;
-            }
-            const handSize = Math.hypot((lm[0].x - lm[9].x) * aspect, lm[0].y - lm[9].y);
-            debug.hands.push({ landmarks: lm, pinched: ratio < pinchDown });
-            const tip = toScreen({ x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 });
-            if (tip) detections.push({ ...tip, pinchRatio: ratio, handSize });
-            else handsOutside++;
-          });
-        }
-      } else {
-        const tip = detectColorPen(video);
-        if (tip) {
-          const screen = toScreen(tip);
-          if (screen) detections.push({ ...screen, pinchRatio: null, handSize: 1 });
-          else handsOutside++;
-        }
-      }
-      if (detections.length || handsOutside) lastHandSeenRef.current = time;
-
-      // 2. Match detections to known pens (nearest first) so each person
-      // keeps their stroke from frame to frame.
-      const pens = pensRef.current;
-      const matchRadius = minSide * PEN_MATCH_FACTOR;
-      const pairs: { d: number; di: number; pi: number }[] = [];
-      detections.forEach((det, di) =>
-        pens.forEach((pen, pi) => {
-          const d = Math.hypot(det.x - pen.x, det.y - pen.y);
-          if (d < matchRadius) pairs.push({ d, di, pi });
-        })
-      );
-      pairs.sort((a, b) => a.d - b.d);
-      const detToPen = new Map<number, number>();
-      const usedPens = new Set<number>();
-      for (const { di, pi } of pairs) {
-        if (detToPen.has(di) || usedPens.has(pi)) continue;
-        detToPen.set(di, pi);
-        usedPens.add(pi);
-      }
-      detections.forEach((det, di) => {
-        if (detToPen.has(di)) return;
-        pens.push({
-          x: det.x,
-          y: det.y,
-          filterX: new OneEuroFilter(1.2, 0.015, 1),
-          filterY: new OneEuroFilter(1.2, 0.015, 1),
-          down: false,
-          flipFrames: 0,
-          closeness: 0,
-          handSize: det.handSize,
-          // New pens (including a hand that tracking briefly lost) use the
-          // last color anyone picked, so colors never change on their own.
-          color: currentColorRef.current,
-          lastSeen: time,
-          prev: null,
-          speed: 0,
-          wetness: 0,
-          hoverSlot: null,
-          hoverTime: 0,
-        });
-        detToPen.set(di, pens.length - 1);
-      });
-
-      // 3. Advance each seen pen: smoothing, pen up/down, palette,
-      // spraying, drips.
-      const paintCtx = paint.getContext("2d")!;
       const swatches = paletteLayout(width, height);
+      // Everything below this line is the palette band: no painting there.
+      const paletteTop = showPaletteRef.current ? swatches[0].y - swatches[0].r * 2 : Infinity;
+      const paintCtx = paint.getContext("2d")!;
       const baseRadius = minSide * (0.008 + (brushSizeRef.current / 100) * 0.03);
+      // The lazy-brush leash: the brush only moves once the tracked point
+      // pulls further than this from it, which swallows hand-tracking
+      // jitter while still following deliberate motion exactly.
+      const leash = minSide * (0.001 + (steadinessRef.current / 100) * 0.014);
 
-      detToPen.forEach((pi, di) => {
-        const det = detections[di];
-        const pen = pens[pi];
-        const gap = time - pen.lastSeen;
-        pen.lastSeen = time;
-        pen.handSize = det.handSize;
-        const x = pen.filterX.filter(det.x, tSec);
-        const y = pen.filterY.filter(det.y, tSec);
-        const moved = Math.hypot(x - pen.x, y - pen.y);
-        pen.speed = pen.speed * 0.7 + (moved / dt) * 0.3;
-        pen.x = x;
-        pen.y = y;
+      // The camera delivers ~30 frames/s but this loop runs at the
+      // display's rate. Tracking only runs on a *new* camera frame:
+      // re-processing the same image fed the smoothing filter alternating
+      // "didn't move" / "moved twice as far" samples, which showed up as
+      // jittery, imprecise lines.
+      const newFrame = video.currentTime !== lastVideoTimeRef.current;
+      let handsOutside = 0;
+      if (newFrame) {
+        lastVideoTimeRef.current = video.currentTime;
+        const frameDt = lastFrameTimeRef.current
+          ? Math.min((time - lastFrameTimeRef.current) / 1000, 0.1)
+          : 1 / 30;
+        lastFrameTimeRef.current = time;
+        const tSec = time / 1000;
 
-        const wantDown =
-          det.pinchRatio === null
-            ? true
-            : pen.down
-            ? det.pinchRatio < pinchUp
-            : det.pinchRatio < pinchDown;
-        if (wantDown === pen.down) {
-          pen.flipFrames = 0;
-        } else if (++pen.flipFrames >= (wantDown ? DOWN_FRAMES : UP_FRAMES)) {
-          pen.down = wantDown;
-          pen.flipFrames = 0;
-          pen.prev = null;
-        }
-        // 0 = fingers wide open, 1 = pinched: drives the meter on the wall.
-        pen.closeness =
-          det.pinchRatio === null
-            ? 1
-            : Math.max(0, Math.min(1, (pinchUp * 1.8 - det.pinchRatio) / (pinchUp * 1.8 - pinchDown)));
+        // 1. Find pen tips in camera space and map them onto the wall.
+        const toScreen = (p: Point): Point | null => {
+          if (!H) return null;
+          const q = applyHomography(H, p);
+          if (!q) return null;
+          // Slightly outside the projection still counts, so strokes can
+          // reach the very edge; far outside is someone walking past.
+          if (q.x < -0.05 || q.x > 1.05 || q.y < -0.05 || q.y > 1.05) return null;
+          return { x: q.x * width, y: q.y * height };
+        };
 
-        // Palette: only an open hand (pen up) resting on a swatch picks
-        // it, so drawing across the palette never changes color by
-        // accident.
-        let hover: number | null = null;
-        if (showPaletteRef.current && !calibrating && !pen.down) {
-          swatches.forEach((s, i) => {
-            if (Math.hypot(x - s.x, y - s.y) < s.r * 1.4) hover = i;
-          });
-        }
-        if (hover !== pen.hoverSlot) {
-          pen.hoverSlot = hover;
-          pen.hoverTime = 0;
-        } else if (hover !== null) {
-          pen.hoverTime += dt;
-          const hold = hover === CLEAR_SLOT ? CLEAR_HOLD_S : PICK_HOLD_S;
-          if (pen.hoverTime >= hold) {
-            if (hover === CLEAR_SLOT) {
-              clearWall();
-            } else {
-              pen.color = hover;
-              currentColorRef.current = hover;
-            }
-            pen.hoverTime = -Infinity; // fire once per hover
-          }
-        }
-
-        if (!pen.down || calibrating) {
-          pen.prev = null;
-          pen.wetness = 0;
-          return;
-        }
-
-        const color = PALETTE[pen.color];
-        // Fast strokes spray thinner, slow ones fatter — like a real can.
-        const speedFactor = Math.max(0.55, Math.min(1.3, 1.3 - pen.speed / 2500));
-        const radius = baseRadius * speedFactor;
-        const from = pen.prev && gap < STROKE_GAP_MS ? pen.prev : { x, y };
-        sprayStroke(paintCtx, from, { x, y }, radius, color);
-        pen.prev = { x, y };
-
-        if (dripsOnRef.current) {
-          pen.wetness += dt * Math.max(0, 1 - pen.speed / DRIP_SPEED);
-          if (pen.wetness > DRIP_WETNESS && dripsRef.current.length < MAX_DRIPS) {
-            pen.wetness = -Math.random() * 0.4;
-            dripsRef.current.push({
-              x: x + (Math.random() - 0.5) * radius * 0.9,
-              y: y + radius * 0.35,
-              vy: 35 + Math.random() * 45,
-              width: radius * (0.12 + Math.random() * 0.12),
-              remaining: radius * (1.5 + Math.random() * 5),
-              color,
+        const detections: Detection[] = [];
+        const debug = cameraDebugRef.current;
+        debug.hands = [];
+        if (handMode) {
+          debug.colorMask = [];
+          debug.colorTip = null;
+          const landmarker = landmarkerRef.current;
+          if (landmarker) {
+            const result: HandLandmarkerResult = landmarker.detectForVideo(video, time);
+            const aspect = video.videoWidth / video.videoHeight;
+            result.landmarks.forEach((lm, h) => {
+              const world = result.worldLandmarks[h];
+              let ratio: number;
+              if (world && world.length === 21) {
+                const palm = (dist3(world[0], world[5]) + dist3(world[0], world[17])) / 2 || 1;
+                ratio = dist3(world[4], world[8]) / palm;
+              } else {
+                const palm = Math.hypot((lm[0].x - lm[9].x) * aspect, lm[0].y - lm[9].y) || 1;
+                ratio = Math.hypot((lm[4].x - lm[8].x) * aspect, lm[4].y - lm[8].y) / palm;
+              }
+              const handSize = Math.hypot((lm[0].x - lm[9].x) * aspect, lm[0].y - lm[9].y);
+              debug.hands.push({ landmarks: lm, pinched: ratio < pinchDown });
+              // The paint comes from the index fingertip. The thumb/index
+              // midpoint used before slid sideways every time the fingers
+              // closed, so lines started (and wandered) off target.
+              const tip = toScreen({ x: lm[8].x, y: lm[8].y });
+              if (tip) detections.push({ ...tip, pinchRatio: ratio, handSize });
+              else handsOutside++;
             });
           }
+        } else {
+          const tip = detectColorPen(video);
+          if (tip) {
+            const screen = toScreen(tip);
+            if (screen) detections.push({ ...screen, pinchRatio: null, handSize: 1 });
+            else handsOutside++;
+          }
         }
-      });
+        if (detections.length || handsOutside) lastHandSeenRef.current = time;
+        handsOutsideRef.current = handsOutside;
 
-      pensRef.current = pens.filter((pen) => time - pen.lastSeen < PEN_FORGET_MS);
-      const visiblePens = pensRef.current.filter((p) => p.lastSeen === time);
+        // 2. Match detections to known pens (nearest first) so each person
+        // keeps their stroke from frame to frame.
+        const pens = pensRef.current;
+        const matchRadius = minSide * PEN_MATCH_FACTOR;
+        const pairs: { d: number; di: number; pi: number }[] = [];
+        detections.forEach((det, di) =>
+          pens.forEach((pen, pi) => {
+            const d = Math.hypot(det.x - pen.rawX, det.y - pen.rawY);
+            if (d < matchRadius) pairs.push({ d, di, pi });
+          })
+        );
+        pairs.sort((a, b) => a.d - b.d);
+        const detToPen = new Map<number, number>();
+        const usedPens = new Set<number>();
+        for (const { di, pi } of pairs) {
+          if (detToPen.has(di) || usedPens.has(pi)) continue;
+          detToPen.set(di, pi);
+          usedPens.add(pi);
+        }
+        detections.forEach((det, di) => {
+          if (detToPen.has(di)) return;
+          pens.push({
+            x: det.x,
+            y: det.y,
+            rawX: det.x,
+            rawY: det.y,
+            brush: null,
+            filterX: new OneEuroFilter(0.9, 0.006, 1),
+            filterY: new OneEuroFilter(0.9, 0.006, 1),
+            down: false,
+            locked: false,
+            flipFrames: 0,
+            closeness: 0,
+            handSize: det.handSize,
+            // New pens (including a hand that tracking briefly lost) use the
+            // last color anyone picked, so colors never change on their own.
+            color: currentColorRef.current,
+            lastSeen: time,
+            speed: 0,
+            wetness: 0,
+            hoverSlot: null,
+            hoverTime: 0,
+          });
+          detToPen.set(di, pens.length - 1);
+        });
+
+        // 3. Advance each seen pen: smoothing, pen up/down, palette,
+        // spraying, drips.
+        detToPen.forEach((pi, di) => {
+          const det = detections[di];
+          const pen = pens[pi];
+          const gap = time - pen.lastSeen;
+          pen.lastSeen = time;
+          pen.handSize = det.handSize;
+          pen.rawX = det.x;
+          pen.rawY = det.y;
+          const x = pen.filterX.filter(det.x, tSec);
+          const y = pen.filterY.filter(det.y, tSec);
+          const moved = Math.hypot(x - pen.x, y - pen.y);
+          pen.speed = pen.speed * 0.6 + (moved / frameDt) * 0.4;
+          pen.x = x;
+          pen.y = y;
+          const inPalette = y > paletteTop;
+
+          const wasDown = pen.down;
+          const wantDown =
+            det.pinchRatio === null
+              ? true
+              : pen.down
+              ? det.pinchRatio < pinchUp
+              : det.pinchRatio < pinchDown;
+          if (wantDown === pen.down) {
+            pen.flipFrames = 0;
+          } else if (++pen.flipFrames >= (wantDown ? DOWN_FRAMES : UP_FRAMES)) {
+            pen.down = wantDown;
+            pen.flipFrames = 0;
+          }
+          if (!pen.down) {
+            // Opening the hand always releases the lock.
+            pen.locked = false;
+          } else if (!wasDown && inPalette) {
+            // A pinch that starts in the palette band is a button press,
+            // never the start of a stroke.
+            pen.locked = true;
+          }
+          if (det.pinchRatio === null && !inPalette && pen.hoverSlot === null) {
+            // Color mode has no "open hand": leaving the palette unlocks.
+            pen.locked = false;
+          }
+          // 0 = fingers wide open, 1 = pinched: drives the meter on the wall.
+          pen.closeness =
+            det.pinchRatio === null
+              ? 1
+              : Math.max(0, Math.min(1, (pinchUp * 1.8 - det.pinchRatio) / (pinchUp * 1.8 - pinchDown)));
+
+          // Palette: in hand mode a swatch is *pressed* — pinch on it and
+          // hold briefly. An open hand passing over it does nothing, so
+          // colors can't change by accident. In color mode (pen always
+          // "down") resting on the swatch a little longer picks it.
+          let hover: number | null = null;
+          // (A pinch that started on the wall and was dragged down here is
+          // a stroke, not a press, so it only counts while locked.)
+          if (inPalette && !calibrating && (!handMode || (pen.down && pen.locked))) {
+            swatches.forEach((s, i) => {
+              if (Math.hypot(x - s.x, y - s.y) < s.r * 1.5) hover = i;
+            });
+          }
+          if (hover !== pen.hoverSlot) {
+            pen.hoverSlot = hover;
+            pen.hoverTime = 0;
+          } else if (hover !== null) {
+            pen.hoverTime += frameDt;
+            const hold =
+              hover === CLEAR_SLOT ? CLEAR_HOLD_S : handMode ? PICK_HOLD_S : PICK_DWELL_S;
+            if (pen.hoverTime >= hold) {
+              if (hover === CLEAR_SLOT) {
+                clearWall();
+              } else {
+                pen.color = hover;
+                currentColorRef.current = hover;
+              }
+              // Nothing is painted until the hand opens again (or, in color
+              // mode, the pen leaves the palette).
+              pen.locked = true;
+              pen.hoverTime = -Infinity; // fire once per press
+            }
+          }
+
+          if (!pen.down || pen.locked || inPalette || calibrating) {
+            pen.brush = null;
+            pen.wetness = 0;
+            return;
+          }
+
+          // Lazy brush: drag the brush behind the tracked point on a short
+          // leash. A stroke restarts after a tracking dropout instead of
+          // drawing a straight line across the gap.
+          if (!pen.brush || gap > STROKE_GAP_MS) pen.brush = { x, y };
+          const from = { ...pen.brush };
+          const pull = Math.hypot(x - from.x, y - from.y);
+          if (pull > leash) {
+            const k = (pull - leash) / pull;
+            pen.brush.x += (x - from.x) * k;
+            pen.brush.y += (y - from.y) * k;
+          }
+          const to = pen.brush;
+
+          const color = PALETTE[pen.color];
+          // Fast strokes spray thinner, slow ones fatter — like a real can.
+          const speedFactor = Math.max(0.55, Math.min(1.3, 1.3 - pen.speed / 2500));
+          const radius = baseRadius * speedFactor;
+          sprayStroke(paintCtx, from, to, radius, color);
+
+          if (dripsOnRef.current) {
+            pen.wetness += frameDt * Math.max(0, 1 - pen.speed / DRIP_SPEED);
+            if (pen.wetness > DRIP_WETNESS && dripsRef.current.length < MAX_DRIPS) {
+              pen.wetness = -Math.random() * 0.4;
+              dripsRef.current.push({
+                x: to.x + (Math.random() - 0.5) * radius * 0.9,
+                y: to.y + radius * 0.35,
+                vy: 35 + Math.random() * 45,
+                width: radius * (0.12 + Math.random() * 0.12),
+                remaining: radius * (1.5 + Math.random() * 5),
+                color,
+              });
+            }
+          }
+        });
+
+        pensRef.current = pens.filter((pen) => time - pen.lastSeen < PEN_FORGET_MS);
+      }
+      handsOutside = handsOutsideRef.current;
+
+      const visiblePens = pensRef.current.filter((p) => time - p.lastSeen < PEN_VISIBLE_MS);
       if (visiblePens.length !== penCountRef.current) {
         penCountRef.current = visiblePens.length;
         setPenCount(visiblePens.length);
@@ -971,7 +1051,27 @@ const GraffitiWall = () => {
         octx.strokeRect(1, 1, width - 2, height - 2);
       }
 
+      const guide = showGuideRef.current && !calibrating;
+
       if (showPaletteRef.current && !calibrating) {
+        // Marks off the palette band, where nothing gets painted.
+        octx.strokeStyle = "rgba(255,255,255,0.18)";
+        octx.lineWidth = 1;
+        octx.setLineDash([6, 8]);
+        octx.beginPath();
+        octx.moveTo(swatches[0].x - swatches[0].r * 2, paletteTop);
+        octx.lineTo(swatches[swatches.length - 1].x + swatches[0].r * 2, paletteTop);
+        octx.stroke();
+        octx.setLineDash([]);
+        if (guide && !pensRef.current.some((p) => p.hoverSlot !== null)) {
+          label(
+            handMode ? "pinch a color to pick it" : "rest the pen on a color to pick it",
+            width / 2,
+            paletteTop - fontSize * 0.7,
+            fontSize * 0.6,
+            0.5
+          );
+        }
         swatches.forEach((s, i) => {
           octx.beginPath();
           octx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
@@ -1002,18 +1102,17 @@ const GraffitiWall = () => {
           if (pen.hoverSlot === null || pen.hoverTime <= 0) continue;
           const s = swatches[pen.hoverSlot];
           const isClear = pen.hoverSlot === CLEAR_SLOT;
-          const progress = Math.min(pen.hoverTime / (isClear ? CLEAR_HOLD_S : PICK_HOLD_S), 1);
+          const hold = isClear ? CLEAR_HOLD_S : handMode ? PICK_HOLD_S : PICK_DWELL_S;
+          const progress = Math.min(pen.hoverTime / hold, 1);
           octx.strokeStyle = "#fff";
           octx.lineWidth = 4;
           octx.beginPath();
           octx.arc(s.x, s.y, s.r * 1.6, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
           octx.stroke();
-          label(isClear ? "hold to wipe the wall" : "hold to pick", s.x, s.y - s.r * 2.6, fontSize * 0.8);
+          label(isClear ? "keep holding to wipe the wall" : "picking…", s.x, s.y - s.r * 2.6, fontSize * 0.8);
         }
       }
 
-      const guide = showGuideRef.current && !calibrating;
-      const handMode = modeRef.current === "hand";
 
       // The how-to card, shown on the wall whenever nobody is drawing.
       if (guide && time - lastHandSeenRef.current > IDLE_GUIDE_DELAY_MS) {
@@ -1023,7 +1122,7 @@ const GraffitiWall = () => {
               "1 · Hold your hand up in front of the wall",
               "2 · Pinch thumb + index together (like holding a pen) to spray",
               "3 · Open your hand to stop",
-              "4 · Open hand on a color for 1 second to switch · on ✕ to wipe",
+              "4 · Pinch a color at the bottom to switch · pinch and hold ✕ to wipe",
             ]
           : [
               "1 · Hold the pen up to the wall, tip toward the camera",
@@ -1036,7 +1135,7 @@ const GraffitiWall = () => {
           label(line, width / 2, top + fontSize * (2.6 + i * 1.6), fontSize * 0.85, 0.8 * fade)
         );
       }
-      if (guide && handsOutside > 0 && detections.length === 0) {
+      if (guide && handsOutside > 0 && visiblePens.length === 0) {
         label("Move your hand inside the drawing area", width / 2, height * 0.08, fontSize, 0.85);
       }
 
@@ -1060,11 +1159,13 @@ const GraffitiWall = () => {
           octx.arc(pen.x, pen.y, 3, 0, Math.PI * 2);
           octx.fill();
         }
-        if (!guide || pen.down || pen.hoverSlot !== null) continue;
+        if (!guide || pen.hoverSlot !== null) continue;
         const hint =
           handMode && pen.handSize < MIN_HAND_SIZE
             ? "hand looks small to the camera — move it closer"
-            : handMode
+            : handMode && pen.locked
+            ? "open your hand, then pinch to draw"
+            : handMode && !pen.down
             ? "pinch to spray"
             : null;
         if (hint) label(hint, pen.x, pen.y - r - fontSize * 0.9, fontSize * 0.75, 0.85);
@@ -1115,6 +1216,8 @@ const GraffitiWall = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     lastTimeRef.current = null;
+    lastVideoTimeRef.current = -1;
+    lastFrameTimeRef.current = null;
     pensRef.current = [];
     penCountRef.current = 0;
     penDownCountRef.current = 0;
@@ -1632,6 +1735,21 @@ const GraffitiWall = () => {
             </div>
           )}
 
+          <label className="block">
+            Steadiness
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={steadiness}
+              onChange={(e) => setSteadiness(Number(e.target.value))}
+              className="w-full"
+            />
+            <span className="text-xs text-white/50">
+              Higher = smoother, straighter lines that trail the hand a little.
+              Lower = follows every tiny movement.
+            </span>
+          </label>
           <label className="block">
             Spray size
             <input
