@@ -21,6 +21,18 @@ const FACE_EVERY_N_FRAMES = 2;
 // Face boxes are grown by this fraction on each side before rejecting
 // hands inside them (the detector's box is tight around the features).
 const FACE_BOX_MARGIN = 0.25;
+// A face is remembered this long after the detector last saw it. A hand
+// raised in front of the face often hides it from the face detector for a
+// moment — exactly when the hand model is most likely to see a second,
+// phantom "hand" on the face.
+const FACE_HOLD_MS = 2000;
+// A hand is treated as sitting on a face (and ignored) when at least this
+// share of its 21 landmarks fall inside a face box. A real hand held next
+// to or partly over the face sticks out of the box and is kept.
+const FACE_OVERLAP_SHARE = 0.6;
+// The hand model's left/right classification score doubles as a "how sure
+// is this a hand" signal; phantom hands usually score lower.
+const MIN_HANDEDNESS_SCORE = 0.8;
 
 const PALETTE = [
   "#ff2d95", // pink
@@ -285,6 +297,18 @@ function isPlausibleHand(world: { x: number; y: number; z: number }[]): boolean 
   return true;
 }
 
+// Intersection-over-union of two axis-aligned boxes.
+function boxOverlap(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number }
+): number {
+  const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  const inter = ix * iy;
+  const union = a.w * a.h + b.w * b.h - inter;
+  return union > 0 ? inter / union : 0;
+}
+
 // Groups the set pixels of a w*h mask into 4-connected blobs.
 function connectedComponents(mask: Uint8Array, w: number, h: number): number[][] {
   const seen = new Uint8Array(mask.length);
@@ -400,6 +424,7 @@ const GraffitiWall = () => {
   const handsOutsideRef = useRef(0);
   const faceDetectorRef = useRef<FaceDetector | null>(null);
   const frameCountRef = useRef(0);
+  const facesRef = useRef<{ box: CameraDebug["faces"][number]; seen: number }[]>([]);
 
   const [mode, setMode] = useState<TrackingMode>("hand");
   const [corners, setCorners] = useState<Point[]>(loadCorners);
@@ -408,6 +433,9 @@ const GraffitiWall = () => {
   const [steadiness, setSteadiness] = useState(40);
   const [maxHands, setMaxHands] = useState(2);
   const [ignoreFaces, setIgnoreFaces] = useState(true);
+  const [faceFilterStatus, setFaceFilterStatus] = useState<"loading" | "ready" | "unavailable">(
+    "loading"
+  );
   const [dripsOn, setDripsOn] = useState(true);
   const [showPalette, setShowPalette] = useState(true);
   const [showGuide, setShowGuide] = useState(true);
@@ -747,7 +775,7 @@ const GraffitiWall = () => {
         ctx.stroke();
         ctx.fillStyle = "rgba(255,60,60,0.95)";
         ctx.fillText(
-          hand.rejected === "face" ? "not a hand (face)" : "not a hand (shape)",
+          `not a hand (${hand.rejected})`,
           hand.landmarks[0].x * w + 4,
           hand.landmarks[0].y * h + 14
         );
@@ -868,42 +896,49 @@ const GraffitiWall = () => {
             const faceDetector = faceDetectorRef.current;
             if (ignoreFacesRef.current && faceDetector) {
               if (frameCountRef.current % FACE_EVERY_N_FRAMES === 0) {
-                const faces = faceDetector.detectForVideo(video, time).detections;
-                debug.faces = faces.flatMap((f) => {
+                const found = faceDetector.detectForVideo(video, time).detections;
+                for (const f of found) {
                   const b = f.boundingBox;
-                  if (!b) return [];
+                  if (!b) continue;
                   const mx = b.width * FACE_BOX_MARGIN;
                   const my = b.height * FACE_BOX_MARGIN;
-                  return [
-                    {
-                      x: (b.originX - mx) / video.videoWidth,
-                      y: (b.originY - my) / video.videoHeight,
-                      w: (b.width + mx * 2) / video.videoWidth,
-                      h: (b.height + my * 2) / video.videoHeight,
-                    },
-                  ];
-                });
+                  const box = {
+                    x: (b.originX - mx) / video.videoWidth,
+                    y: (b.originY - my) / video.videoHeight,
+                    w: (b.width + mx * 2) / video.videoWidth,
+                    h: (b.height + my * 2) / video.videoHeight,
+                  };
+                  // Same face as one we remember (boxes overlap) → refresh
+                  // it; otherwise it's a new face.
+                  const known = facesRef.current.find((k) => boxOverlap(k.box, box) > 0.2);
+                  if (known) {
+                    known.box = box;
+                    known.seen = time;
+                  } else {
+                    facesRef.current.push({ box, seen: time });
+                  }
+                }
               }
+              facesRef.current = facesRef.current.filter((f) => time - f.seen < FACE_HOLD_MS);
             } else {
-              debug.faces = [];
+              facesRef.current = [];
             }
+            debug.faces = facesRef.current.map((f) => f.box);
             frameCountRef.current++;
 
             result.landmarks.forEach((lm, h) => {
               const world = result.worldLandmarks[h];
-              const palmCenter = [0, 5, 9, 13, 17].reduce(
-                (acc, i) => ({ x: acc.x + lm[i].x / 5, y: acc.y + lm[i].y / 5 }),
-                { x: 0, y: 0 }
-              );
-              const onFace = debug.faces.some(
-                (f) =>
-                  palmCenter.x > f.x &&
-                  palmCenter.x < f.x + f.w &&
-                  palmCenter.y > f.y &&
-                  palmCenter.y < f.y + f.h
-              );
+              const onFace = debug.faces.some((f) => {
+                const inside = lm.filter(
+                  (p) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p.y < f.y + f.h
+                ).length;
+                return inside / lm.length >= FACE_OVERLAP_SHARE;
+              });
+              const handednessScore = result.handedness[h]?.[0]?.score ?? 1;
               const rejected = onFace
                 ? "face"
+                : handednessScore < MIN_HANDEDNESS_SCORE
+                ? "unsure"
                 : world && world.length === 21 && !isPlausibleHand(world)
                 ? "shape"
                 : null;
@@ -1358,10 +1393,12 @@ const GraffitiWall = () => {
             "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
         },
         runningMode: "VIDEO",
-        minDetectionConfidence: 0.5,
+        minDetectionConfidence: 0.35,
       });
+      setFaceFilterStatus("ready");
     } catch {
       faceDetectorRef.current = null;
+      setFaceFilterStatus("unavailable");
     }
     return landmarker;
   }, []);
@@ -1884,6 +1921,20 @@ const GraffitiWall = () => {
                 />
                 Ignore faces (stops faces counting as hands)
               </label>
+              {ignoreFaces && isRunning && (
+                <p
+                  className={`text-xs ${
+                    faceFilterStatus === "unavailable" ? "text-amber-300" : "text-white/60"
+                  }`}
+                >
+                  Face filter:{" "}
+                  {faceFilterStatus === "ready"
+                    ? "active"
+                    : faceFilterStatus === "loading"
+                    ? "loading…"
+                    : "unavailable — its model didn't load, so faces may still count as hands"}
+                </p>
+              )}
               <p className="text-xs text-white/50">
                 In the camera view, faces get a blue box and anything rejected
                 as "not a hand" is drawn red.
