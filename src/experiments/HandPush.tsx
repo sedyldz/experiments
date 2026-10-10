@@ -6,7 +6,7 @@ import {
   HandLandmarker,
   type HandLandmarkerResult,
 } from "@mediapipe/tasks-vision";
-import { OneEuroFilter } from "../lib/oneEuroFilter";
+import { createLandmarkFilters, type LandmarkFilter } from "../lib/OneEuroFilter";
 
 const OBJECT_COUNT = 16;
 const MAX_HANDS = 2;
@@ -37,20 +37,6 @@ const MAX_DRAG_SPEED = 4000;
 // exactly onto it every frame) turns residual landmark noise into a small
 // smoothed wobble instead of a one-frame jolt.
 const DRAG_FOLLOW_GAIN = 22;
-
-interface LandmarkFilter {
-  x: OneEuroFilter;
-  y: OneEuroFilter;
-  z: OneEuroFilter;
-}
-
-function createLandmarkFilters(count: number): LandmarkFilter[] {
-  return Array.from({ length: count }, () => ({
-    x: new OneEuroFilter(0.5, 1.2, 1),
-    y: new OneEuroFilter(0.5, 1.2, 1),
-    z: new OneEuroFilter(0.5, 1.2, 1),
-  }));
-}
 
 // A stable, low-jitter stand-in for "palm center": the wrist plus the four
 // finger MCP knuckles, averaged.

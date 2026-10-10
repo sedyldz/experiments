@@ -43,3 +43,17 @@ export class OneEuroFilter {
     return xHat;
   }
 }
+
+export interface LandmarkFilter {
+  x: OneEuroFilter;
+  y: OneEuroFilter;
+  z: OneEuroFilter;
+}
+
+export function createLandmarkFilters(count: number): LandmarkFilter[] {
+  return Array.from({ length: count }, () => ({
+    x: new OneEuroFilter(0.5, 1.2, 1),
+    y: new OneEuroFilter(0.5, 1.2, 1),
+    z: new OneEuroFilter(0.5, 1.2, 1),
+  }));
+}

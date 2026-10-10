@@ -6,7 +6,7 @@ import {
   type HandLandmarkerResult,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
-import { OneEuroFilter } from "../lib/oneEuroFilter";
+import { OneEuroFilter } from "../lib/OneEuroFilter";
 
 const MAX_HANDS = 4;
 
