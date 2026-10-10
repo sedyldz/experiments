@@ -373,9 +373,13 @@ function scatterLayout(count: number): LayoutEntry[] {
   let attempts = 0;
   while (entries.length < count && attempts < 2000) {
     attempts++;
-    const x = 0.1 + Math.random() * 0.8;
-    const y = 0.15 + Math.random() * 0.7;
-    if (entries.every((e) => Math.hypot(e.x - x, (e.y - y) * 0.6) > 0.09)) {
+    // A loose cluster around the middle of the screen (sqrt keeps the
+    // density even across the ellipse instead of bunching at the center).
+    const r = Math.sqrt(Math.random());
+    const a = Math.random() * Math.PI * 2;
+    const x = 0.5 + Math.cos(a) * r * 0.3;
+    const y = 0.5 + Math.sin(a) * r * 0.3;
+    if (entries.every((e) => Math.hypot(e.x - x, (e.y - y) * 0.6) > 0.07)) {
       entries.push(makeEntry(x, y));
     }
   }
@@ -1269,7 +1273,7 @@ const Butterflies = () => {
   return (
     <div
       ref={containerRef}
-      className={`relative h-screen w-full overflow-hidden bg-black ${editMode ? "cursor-crosshair" : ""}`}
+      className={`fixed inset-0 z-50 overflow-hidden bg-black ${editMode ? "cursor-crosshair" : ""}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
