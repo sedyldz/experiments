@@ -44,5 +44,14 @@ export const experiments: Experiment[] = [
     path: "/experiments/butterflies",
     githubUrl: "https://github.com/yourusername/butterflies",
   },
+  {
+    id: "scratch-card",
+    title: "Kazı Kazan",
+    description:
+      "A zodiac scratch card you scratch with your own hand: MediaPipe hand tracking turns a thumb-and-index pinch into a pen. Reveal all six symbols and they fly to the front, then the combination decides your fortune. Then a fresh random card for the next person.",
+    thumbnail: "/thumbnails/scratch-card.jpg",
+    path: "/experiments/scratch-card",
+    githubUrl: "https://github.com/sedyldz/experiments",
+  },
   // Add more experiments here as you create them
 ];

@@ -5,6 +5,7 @@ import CalendarStories from "./experiments/CalendarStories";
 import CameraPortal from "./experiments/CameraPortal";
 import HandPush from "./experiments/HandPush";
 import Butterflies from "./experiments/Butterflies";
+import ScratchCard from "./experiments/ScratchCard";
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             />
             <Route path="/experiments/hand-push" element={<HandPush />} />
             <Route path="/experiments/butterflies" element={<Butterflies />} />
+            <Route path="/experiments/scratch-card" element={<ScratchCard />} />
           </Routes>
         </main>
       </div>
