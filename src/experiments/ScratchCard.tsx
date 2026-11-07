@@ -10,9 +10,12 @@ const CW = 600;
 const CH = 800;
 // The foil layer is rendered at 2x for crisper scratch edges.
 const FOIL_SCALE = 2;
-const BRUSH_RADIUS = 24;
+// A coin edge, not a paintbrush: narrow, and each dab only takes off a thin
+// layer of foil, so a spot needs several passes before it is really clear.
+const BRUSH_RADIUS = 10;
+const DAB_ALPHA = 0.07;
 // Fraction of a cell's foil that must be gone before it counts as revealed.
-const REVEAL_THRESHOLD = 0.5;
+const REVEAL_THRESHOLD = 0.82;
 const COVERAGE_CHECK_MS = 140;
 
 // Pinching thumb and index together = holding a pen. Ratios are against the
@@ -28,66 +31,65 @@ const GATHER_MS = 1500;
 const TYPE_CPS = 38;
 const AUTO_NEXT_MS = 14000;
 
-type Element = "fire" | "earth" | "air" | "water";
+type Group = "luck" | "treasure" | "sweet" | "night";
 
 interface Sign {
   name: string;
   glyph: string;
-  element: Element;
+  group: Group;
 }
 
-// ︎ forces the text (not emoji) presentation of the zodiac glyphs.
 const SIGNS: Sign[] = [
-  { name: "Aries", glyph: "♈︎", element: "fire" },
-  { name: "Taurus", glyph: "♉︎", element: "earth" },
-  { name: "Gemini", glyph: "♊︎", element: "air" },
-  { name: "Cancer", glyph: "♋︎", element: "water" },
-  { name: "Leo", glyph: "♌︎", element: "fire" },
-  { name: "Virgo", glyph: "♍︎", element: "earth" },
-  { name: "Libra", glyph: "♎︎", element: "air" },
-  { name: "Scorpio", glyph: "♏︎", element: "water" },
-  { name: "Sagittarius", glyph: "♐︎", element: "fire" },
-  { name: "Capricorn", glyph: "♑︎", element: "earth" },
-  { name: "Aquarius", glyph: "♒︎", element: "air" },
-  { name: "Pisces", glyph: "♓︎", element: "water" },
+  { name: "Clover", glyph: "\u{1F340}", group: "luck" },
+  { name: "Ladybug", glyph: "\u{1F41E}", group: "luck" },
+  { name: "Star", glyph: "\u2B50", group: "luck" },
+  { name: "Diamond", glyph: "\u{1F48E}", group: "treasure" },
+  { name: "Crown", glyph: "\u{1F451}", group: "treasure" },
+  { name: "Key", glyph: "\u{1F511}", group: "treasure" },
+  { name: "Cherry", glyph: "\u{1F352}", group: "sweet" },
+  { name: "Lemon", glyph: "\u{1F34B}", group: "sweet" },
+  { name: "Balloon", glyph: "\u{1F388}", group: "sweet" },
+  { name: "Moon", glyph: "\u{1F319}", group: "night" },
+  { name: "Crystal", glyph: "\u{1F52E}", group: "night" },
+  { name: "Owl", glyph: "\u{1F989}", group: "night" },
 ];
 
-const ELEMENT_ORDER: Element[] = ["fire", "earth", "air", "water"];
+const GROUP_ORDER: Group[] = ["luck", "treasure", "sweet", "night"];
 
-const ELEMENT_LABEL: Record<Element, string> = {
-  fire: "Fire",
-  earth: "Earth",
-  air: "Air",
-  water: "Water",
+const GROUP_LABEL: Record<Group, string> = {
+  luck: "Lucky",
+  treasure: "Treasure",
+  sweet: "Sweet",
+  night: "Night",
 };
 
-const ELEMENT_COLOR: Record<Element, string> = {
-  fire: "#ff8a5c",
-  earth: "#9be58f",
-  air: "#a8d8ff",
-  water: "#8f9bff",
+const GROUP_COLOR: Record<Group, string> = {
+  luck: "#9be58f",
+  treasure: "#ffd45c",
+  sweet: "#ff9ec4",
+  night: "#8f9bff",
 };
 
-const FORTUNES: Record<Element, string[]> = {
-  fire: [
-    "Bold energy is on your side. Say yes to the thing that scares you a little this week.",
-    "A spark you ignored is ready to become a fire. Start before you feel ready.",
+const FORTUNES: Record<Group, string[]> = {
+  luck: [
+    "Luck is already on your side. Say yes to the thing that scares you a little this week.",
+    "A small coincidence turns into a big opportunity. Pay attention to the second \"what a coincidence\".",
     "Someone is waiting for you to go first. Your courage gives them permission.",
   ],
-  earth: [
-    "Slow and steady wins this one. Something you planted a while ago is about to show up.",
-    "Good things are coming through small, solid habits. Keep going, quietly.",
+  treasure: [
+    "Something you thought was ordinary turns out to be valuable. Keep it close.",
+    "A door you forgot about opens. You already have the key.",
     "You will find exactly what you need right where you are standing.",
   ],
-  air: [
-    "A conversation changes your mind in the best way. Stay curious and say it out loud.",
-    "An idea you had in the shower deserves to be written down today.",
-    "News arrives sideways, from someone you did not expect. Answer it.",
+  sweet: [
+    "A sweet surprise is on its way, probably from someone who thinks of you often.",
+    "Treat yourself without explaining why. This week it counts double.",
+    "A small joy turns your whole day around. Notice it when it shows up.",
   ],
-  water: [
+  night: [
     "Trust the feeling you keep brushing aside. It knows something your head does not yet.",
-    "A soft week: rest, cry, laugh, repeat. Something heavy is finally lifting.",
-    "Someone close is thinking of you. Reach out first, it will mean more.",
+    "An idea you have late at night deserves to be written down today.",
+    "News arrives sideways, from someone you did not expect. Answer it.",
   ],
 };
 
@@ -105,7 +107,7 @@ interface CardState {
   cells: Cell[];
   fortune: string;
   bonus: string;
-  element: Element;
+  group: Group;
 }
 
 const SPOT_R = 76;
@@ -140,27 +142,25 @@ function newCard(): CardState {
     });
   }
 
-  // The combination decides the fortune: the most common element wins
-  // (ties go in fire, earth, air, water order).
-  const counts: Record<Element, number> = { fire: 0, earth: 0, air: 0, water: 0 };
-  cells.forEach((c) => counts[c.sign.element]++);
-  const element = ELEMENT_ORDER.reduce((best, e) =>
-    counts[e] > counts[best] ? e : best
-  );
+  // The combination decides the fortune: the most common group wins
+  // (ties follow the order luck, treasure, sweet, night).
+  const counts: Record<Group, number> = { luck: 0, treasure: 0, sweet: 0, night: 0 };
+  cells.forEach((c) => counts[c.sign.group]++);
+  const group = GROUP_ORDER.reduce((best, e) => (counts[e] > counts[best] ? e : best));
 
   const bySign = new Map<string, number>();
   cells.forEach((c) => bySign.set(c.sign.name, (bySign.get(c.sign.name) ?? 0) + 1));
   const repeated = [...bySign.entries()].sort((a, b) => b[1] - a[1])[0];
   let bonus: string;
   if (repeated[1] >= 3) {
-    bonus = `Triple ${repeated[0]}! A rare spread. Expect that sign's story to repeat loudly.`;
+    bonus = `Triple ${repeated[0]}! A rare spread. Expect that one to show up again, loudly.`;
   } else if (repeated[1] === 2) {
     bonus = `${repeated[0]} showed up twice: lucky doubles, say yes twice.`;
   } else {
-    bonus = "Six different signs: a week full of surprises.";
+    bonus = "Six different symbols: a week full of surprises.";
   }
 
-  return { cells, fortune: pick(FORTUNES[element]), bonus, element };
+  return { cells, fortune: pick(FORTUNES[group]), bonus, group };
 }
 
 function roundRect(
@@ -250,6 +250,10 @@ const ScratchCard = () => {
   const lastCheckRef = useRef(0);
   const lastVideoTimeRef = useRef(-1);
   const cardCountRef = useRef(1);
+  const flakesRef = useRef<
+    { x: number; y: number; vx: number; vy: number; life: number; size: number; rot: number }[]
+  >([]);
+  const lastFrameRef = useRef(0);
 
   // Pen state: hand (pinch) takes priority over the mouse.
   const handPenRef = useRef<{ x: number; y: number; down: boolean; seen: boolean }>({
@@ -279,6 +283,7 @@ const ScratchCard = () => {
     phaseRef.current = { name: "scratch", since: performance.now() };
     allDoneAtRef.current = null;
     lastPointRef.current = null;
+    flakesRef.current = [];
     cardCountRef.current += 1;
     setCardNo(cardCountRef.current);
     setShowNext(false);
@@ -422,6 +427,12 @@ const ScratchCard = () => {
       pen.y = sy;
     };
 
+    const isOnFoil = (x: number, y: number) =>
+      cardRef.current.cells.some((c) => {
+        const sp = spot(c);
+        return Math.hypot(x - sp.cx, y - sp.cy) < SPOT_R;
+      });
+
     const scratch = (px: number, py: number, down: boolean) => {
       if (phaseRef.current.name !== "scratch") {
         lastPointRef.current = null;
@@ -435,24 +446,38 @@ const ScratchCard = () => {
         return;
       }
       const f = foilRef.current.getContext("2d")!;
-      f.save();
-      f.globalCompositeOperation = "destination-out";
-      f.lineCap = "round";
-      f.lineJoin = "round";
-      f.lineWidth = BRUSH_RADIUS * 2;
-      f.strokeStyle = "#000";
-      f.fillStyle = "#000";
       const last = lastPointRef.current;
-      f.beginPath();
+      // No contact stroke without movement: pressing and holding doesn't
+      // scratch, you have to drag the coin across the foil.
       if (last) {
-        f.moveTo(last.x, last.y);
-        f.lineTo(x, y);
-        f.stroke();
-      } else {
-        f.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2);
-        f.fill();
+        const dist = Math.hypot(x - last.x, y - last.y);
+        const step = BRUSH_RADIUS * 0.5;
+        const n = Math.max(1, Math.ceil(dist / step));
+        f.save();
+        f.globalCompositeOperation = "destination-out";
+        for (let i = 1; i <= n; i++) {
+          const px2 = last.x + ((x - last.x) * i) / n + (Math.random() - 0.5) * 3;
+          const py2 = last.y + ((y - last.y) * i) / n + (Math.random() - 0.5) * 3;
+          f.globalAlpha = DAB_ALPHA * (0.6 + Math.random() * 0.8);
+          f.fillStyle = "#000";
+          f.beginPath();
+          f.arc(px2, py2, BRUSH_RADIUS * (0.75 + Math.random() * 0.35), 0, Math.PI * 2);
+          f.fill();
+          if (Math.random() < 0.35 && flakesRef.current.length < 220 && isOnFoil(px2, py2)) {
+            const ang = Math.random() * Math.PI * 2;
+            flakesRef.current.push({
+              x: px2,
+              y: py2,
+              vx: Math.cos(ang) * (20 + Math.random() * 60),
+              vy: -40 - Math.random() * 70,
+              life: 0,
+              size: 1.5 + Math.random() * 2.5,
+              rot: Math.random() * Math.PI,
+            });
+          }
+        }
+        f.restore();
       }
-      f.restore();
       lastPointRef.current = { x, y };
     };
 
@@ -481,14 +506,6 @@ const ScratchCard = () => {
         if (total && cleared / total > REVEAL_THRESHOLD) {
           c.revealed = true;
           c.revealAt = now;
-          // Auto-clear the rest of this cell once it's mostly scratched.
-          f.save();
-          f.globalCompositeOperation = "destination-out";
-          f.fillStyle = "#000";
-          f.beginPath();
-          f.arc(cx, cy, SPOT_R + 3, 0, Math.PI * 2);
-          f.fill();
-          f.restore();
         }
       }
       if (card.cells.every((c) => c.revealed) && allDoneAtRef.current === null) {
@@ -547,12 +564,12 @@ const ScratchCard = () => {
       ctx.font = "900 108px 'Arial Black', Impact, sans-serif";
       ctx.strokeStyle = "#0a1f66";
       ctx.lineWidth = 12;
-      ctx.strokeText("ASTRO", CW / 2, 196);
+      ctx.strokeText("LUCKY", CW / 2, 196);
       const title = ctx.createLinearGradient(0, 110, 0, 200);
       title.addColorStop(0, "#ffffff");
       title.addColorStop(1, "#8ad1ff");
       ctx.fillStyle = title;
-      ctx.fillText("ASTRO", CW / 2, 196);
+      ctx.fillText("LUCKY", CW / 2, 196);
 
       // Cells: white panels with a round grey scratch spot and a sign label.
       for (const c of card.cells) {
@@ -570,7 +587,7 @@ const ScratchCard = () => {
         ctx.translate(cx, cy);
         ctx.scale(sc, sc);
         ctx.fillStyle = "#1c3fa8";
-        ctx.font = "92px 'Segoe UI Symbol', 'Noto Sans Symbols', 'DejaVu Sans', sans-serif";
+        ctx.font = "92px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(c.sign.glyph, 0, 0);
@@ -584,7 +601,7 @@ const ScratchCard = () => {
       ctx.fillStyle = "#1c3fa8";
       ctx.font = "900 20px 'Arial Black', Impact, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("PINCH TO HOLD THE PEN \u2014 SCRATCH ALL SIX", CW / 2, 742);
+      ctx.fillText("PINCH LIKE HOLDING A COIN \u2014 SCRATCH ALL SIX", CW / 2, 742);
       ctx.restore();
     };
 
@@ -627,6 +644,22 @@ const ScratchCard = () => {
       if (cur.name === "scratch") {
         drawCardFace(now, 1, false);
         ctx.drawImage(foilRef.current, 0, 0, CW, CH);
+        const dt = Math.min((now - (lastFrameRef.current || now)) / 1000, 0.05);
+        flakesRef.current = flakesRef.current.filter((fl) => fl.life < 0.9);
+        for (const fl of flakesRef.current) {
+          fl.life += dt;
+          fl.vy += 520 * dt;
+          fl.x += fl.vx * dt;
+          fl.y += fl.vy * dt;
+          fl.rot += dt * 8;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, 1 - fl.life / 0.9);
+          ctx.translate(fl.x, fl.y);
+          ctx.rotate(fl.rot);
+          ctx.fillStyle = "#a4a8b2";
+          ctx.fillRect(-fl.size, -fl.size * 0.5, fl.size * 2, fl.size);
+          ctx.restore();
+        }
       } else {
         const t = cur.name === "gather" ? easeInOut((now - cur.since) / GATHER_MS) : 1;
         drawCardFace(now, 1 - t, true);
@@ -642,13 +675,13 @@ const ScratchCard = () => {
           const toY = 235 + row * 170;
           const x = fromX + (toX - fromX) * t;
           const y = fromY + (toY - fromY) * t;
-          const size = 92 + 56 * t;
+          const size = 92 + 36 * t;
           const bob = cur.name === "fortune" ? Math.sin(now / 500 + i) * 4 : 0;
           ctx.save();
-          ctx.shadowColor = ELEMENT_COLOR[c.sign.element];
+          ctx.shadowColor = GROUP_COLOR[c.sign.group];
           ctx.shadowBlur = 30 * t;
           ctx.fillStyle = t > 0.05 ? "#fff6d8" : "#2b1a6b";
-          ctx.font = `${size}px 'Segoe UI Symbol', 'Noto Sans Symbols', 'DejaVu Sans', sans-serif`;
+          ctx.font = `${size}px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif`;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(c.sign.glyph, x, y + bob);
@@ -657,7 +690,7 @@ const ScratchCard = () => {
             ctx.fillStyle = `rgba(255,255,255,${(t - 0.6) / 0.4 * 0.8})`;
             ctx.font = "bold 18px 'Helvetica Neue', Arial, sans-serif";
             ctx.textAlign = "center";
-            ctx.fillText(c.sign.name.toUpperCase(), x, y + size * 0.52);
+            ctx.fillText(c.sign.name.toUpperCase(), x, y + size * 0.66);
           }
         }
 
@@ -666,9 +699,9 @@ const ScratchCard = () => {
           const fade = easeOutCubic(ft / 700);
           ctx.globalAlpha = fade;
           ctx.textAlign = "center";
-          ctx.fillStyle = ELEMENT_COLOR[card.element];
+          ctx.fillStyle = GROUP_COLOR[card.group];
           ctx.font = "bold 22px 'Helvetica Neue', Arial, sans-serif";
-          ctx.fillText(`${ELEMENT_LABEL[card.element].toUpperCase()} ENERGY`, CW / 2, 555);
+          ctx.fillText(`${GROUP_LABEL[card.group].toUpperCase()} ENERGY`, CW / 2, 555);
           ctx.fillStyle = "#fff6d8";
           ctx.font = "italic bold 44px Georgia, serif";
           ctx.fillText("your fortune", CW / 2, 605);
@@ -695,6 +728,7 @@ const ScratchCard = () => {
         }
       }
       ctx.restore();
+      lastFrameRef.current = now;
 
       // Camera preview, mirrored, bottom-left.
       const video = videoRef.current;
@@ -715,14 +749,37 @@ const ScratchCard = () => {
       const useHand = hand.seen;
       const pen = useHand ? hand : mouse;
       if (useHand || mouse.x || mouse.y) {
+        // A gold coin held by its edge: the scratching point is the lower-left
+        // rim, the coin sits up and to the right of it, tilted.
+        const R = Math.max(BRUSH_RADIUS * s * 2.6, 22);
         ctx.save();
+        ctx.translate(pen.x + R * 0.62, pen.y - R * 0.62);
+        ctx.rotate(-0.5);
+        ctx.scale(1, pen.down ? 0.78 : 0.92);
+        ctx.shadowColor = "rgba(0,0,0,0.35)";
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetY = pen.down ? 3 : 8;
+        const cg = ctx.createLinearGradient(-R, -R, R, R);
+        cg.addColorStop(0, "#fff0a0");
+        cg.addColorStop(0.45, "#e6b83a");
+        cg.addColorStop(1, "#a97a14");
+        ctx.fillStyle = cg;
         ctx.beginPath();
-        ctx.arc(pen.x, pen.y, BRUSH_RADIUS * s * 0.6, 0, Math.PI * 2);
-        ctx.strokeStyle = pen.down ? "#ff4fa3" : "rgba(255,255,255,0.85)";
-        ctx.fillStyle = pen.down ? "rgba(255,79,163,0.35)" : "rgba(255,255,255,0.12)";
-        ctx.lineWidth = 3;
+        ctx.arc(0, 0, R, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowColor = "transparent";
+        ctx.lineWidth = Math.max(R * 0.08, 2);
+        ctx.strokeStyle = "#8a6210";
         ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, R * 0.78, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(138,98,16,0.7)";
+        ctx.stroke();
+        ctx.fillStyle = "rgba(138,98,16,0.8)";
+        ctx.font = `900 ${R}px Georgia, serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("\u2605", 0, R * 0.04);
         ctx.restore();
       }
     };
