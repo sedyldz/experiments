@@ -584,22 +584,20 @@ const ScratchCard = () => {
         const pop = c.revealed ? easeOutCubic((now - c.revealAt) / 350) : 1;
         const sc = c.revealed ? 0.7 + 0.3 * pop : 1;
         ctx.save();
-        ctx.translate(cx, cy);
+        ctx.translate(cx, cy - 14);
         ctx.scale(sc, sc);
         ctx.fillStyle = "#1c3fa8";
-        ctx.font = "92px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+        ctx.font = "76px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(c.sign.glyph, 0, 0);
         ctx.restore();
-        // The name only shows once the spot is revealed, or it gives it away.
-        if (c.revealed) {
-          ctx.fillStyle = "#d62f3a";
-          ctx.font = "900 19px 'Arial Black', Impact, sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "alphabetic";
-          ctx.fillText(c.sign.name.toUpperCase(), c.x + c.w / 2, c.y + c.h - 16);
-        }
+        // The name sits inside the scratch area too, under the foil.
+        ctx.fillStyle = "#d62f3a";
+        ctx.font = "900 15px 'Arial Black', Impact, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(c.sign.name.toUpperCase(), cx, cy + 50);
       }
       ctx.fillStyle = "#1c3fa8";
       ctx.font = "900 20px 'Arial Black', Impact, sans-serif";
