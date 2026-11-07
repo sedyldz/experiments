@@ -592,11 +592,14 @@ const ScratchCard = () => {
         ctx.textBaseline = "middle";
         ctx.fillText(c.sign.glyph, 0, 0);
         ctx.restore();
-        ctx.fillStyle = "#d62f3a";
-        ctx.font = "900 19px 'Arial Black', Impact, sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText(c.sign.name.toUpperCase(), c.x + c.w / 2, c.y + c.h - 16);
+        // The name only shows once the spot is revealed, or it gives it away.
+        if (c.revealed) {
+          ctx.fillStyle = "#d62f3a";
+          ctx.font = "900 19px 'Arial Black', Impact, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "alphabetic";
+          ctx.fillText(c.sign.name.toUpperCase(), c.x + c.w / 2, c.y + c.h - 16);
+        }
       }
       ctx.fillStyle = "#1c3fa8";
       ctx.font = "900 20px 'Arial Black', Impact, sans-serif";
