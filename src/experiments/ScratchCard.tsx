@@ -12,10 +12,10 @@ const CH = 800;
 const FOIL_SCALE = 2;
 // A coin edge, not a paintbrush: narrow, and each dab only takes off a thin
 // layer of foil, so a spot needs several passes before it is really clear.
-const BRUSH_RADIUS = 10;
-const DAB_ALPHA = 0.07;
+const BRUSH_RADIUS = 14;
+const DAB_ALPHA = 0.14;
 // Fraction of a cell's foil that must be gone before it counts as revealed.
-const REVEAL_THRESHOLD = 0.82;
+const REVEAL_THRESHOLD = 0.6;
 const COVERAGE_CHECK_MS = 140;
 
 // Pinching thumb and index together = holding a pen. Ratios are against the
